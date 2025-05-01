@@ -66,10 +66,9 @@ try
     Console.WriteLine($"--- AST Built Successfully ({fileNode.Statements.Count} statements found) ---");
 
     // Optional: Print the constructed AST structure for debugging
-    // Console.WriteLine("--- Constructed AST ---");
-    // Console.WriteLine(rootAstNode.ToString());
-    // Console.WriteLine("-----------------------");
-
+    Console.WriteLine("--- Constructed AST ---");
+    Console.WriteLine(rootAstNode.ToString());
+    Console.WriteLine("-----------------------");
 
     // 3. Execute Statements (Assignments) and Collect Equations
     Console.WriteLine("--- Initializing Execution ---");
@@ -81,9 +80,8 @@ try
     // Print the state of variables after initial assignments
     variableStore.PrintVariables();
 
-
-    // 4. TODO: Solve Equations (Placeholder for next step)
-    Console.WriteLine("--- Equation Solving (Placeholder) ---");
+    // 4. Solve Equations (Placeholder for now)
+    Console.WriteLine("--- Equation Solving Phase ---");
     if (executor.Equations.Count > 0)
     {
         Console.WriteLine($"Found {executor.Equations.Count} equations to solve:");
@@ -91,22 +89,23 @@ try
         {
             Console.WriteLine($"- {eq}");
         }
-        // var solver = new EquationSolver(variableStore, executor.Equations);
-        // bool success = solver.Solve();
-        // if (success) {
-        //    Console.WriteLine("--- Solver Converged ---");
-        //    variableStore.PrintVariables(); // Print final solved values
-        // } else {
-        //    Console.Error.WriteLine("--- Solver FAILED to converge ---");
-        //    return 1; // Indicate solver failure
-        // }
+
+        bool success = executor.SolveEquations();
+        if (success)
+        {
+            Console.WriteLine("--- Solver Phase Completed ---");
+        }
+        else
+        {
+            Console.Error.WriteLine("--- Solver FAILED ---");
+            return 1; // Indicate solver failure
+        }
     }
     else
     {
         Console.WriteLine("No equations found to solve.");
     }
     Console.WriteLine("------------------------------------");
-
 
     return 0; // Indicate overall success for this phase
 }

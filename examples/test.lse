@@ -1,10 +1,17 @@
 { Simple Test File for LibreSolvE }
 "This is another comment style"
 
-T_hot = 100 "[C]" // Variable assignment later
-T_cold = 20 "[C]"
-Eff = 0.85
+{ Input values and parameters }
+T_hot = 100 "[C]" // Known hot temperature
+T_cold = 20 "[C]" // Known cold temperature
+Eff = 0.85 // Known thermal efficiency
+CP = 4.18 "[kJ/kg-K]" // Specific heat of water
+m_dot = 2 "[kg/s]" // Mass flow rate
 
-"Equations will go here"
+{ Equations to solve }
 T_hot = T_cold + DeltaT * Eff
 DeltaT = Q_dot / m_dot / CP
+Q_dot = 200 "[kW]" // Heat transfer rate
+
+{ Additional equation that should be redundant - for testing }
+DeltaT = (T_hot - T_cold) / Eff

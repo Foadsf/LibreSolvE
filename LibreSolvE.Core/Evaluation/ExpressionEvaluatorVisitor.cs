@@ -13,11 +13,20 @@ namespace LibreSolvE.Core.Evaluation;
 public class ExpressionEvaluatorVisitor
 {
     private readonly VariableStore _variableStore;
+    private bool _warningsAsErrors = false;
+    private int _undefinedVariableCount = 0;
 
-    public ExpressionEvaluatorVisitor(VariableStore variableStore)
+    public ExpressionEvaluatorVisitor(VariableStore variableStore, bool warningsAsErrors = false)
     {
         _variableStore = variableStore ?? throw new ArgumentNullException(nameof(variableStore));
+        _warningsAsErrors = warningsAsErrors;
     }
+
+    // Return count of implicit variables accessed during last evaluation
+    public int GetUndefinedVariableCount() => _undefinedVariableCount;
+
+    // Reset the undefined variable counter
+    public void ResetUndefinedVariableCount() => _undefinedVariableCount = 0;
 
     // --- Expressions ---
     // We visit the AST nodes directly, not ANTLR parse tree nodes
@@ -29,7 +38,7 @@ public class ExpressionEvaluatorVisitor
                 return num.Value;
             case VariableNode var:
                 // Look up the variable's value
-                return _variableStore.GetVariable(var.Name);
+                return EvaluateVariable(var);
             case BinaryOperationNode binOp:
                 return EvaluateBinaryOperation(binOp);
             // case FunctionCallNode funcCall: // TODO: Add later
@@ -37,6 +46,23 @@ public class ExpressionEvaluatorVisitor
             default:
                 throw new NotImplementedException($"Evaluation not implemented for AST node type: {node.GetType().Name}");
         }
+    }
+
+    private double EvaluateVariable(VariableNode var)
+    {
+        bool wasExplicitlySet = _variableStore.IsExplicitlySet(var.Name);
+        double value = _variableStore.GetVariable(var.Name);
+
+        if (!wasExplicitlySet)
+        {
+            _undefinedVariableCount++;
+            if (_warningsAsErrors)
+            {
+                throw new InvalidOperationException($"Variable '{var.Name}' accessed before assignment");
+            }
+        }
+
+        return value;
     }
 
     private double EvaluateBinaryOperation(BinaryOperationNode binOp)

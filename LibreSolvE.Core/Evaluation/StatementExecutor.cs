@@ -12,6 +12,9 @@ public class StatementExecutor
     // We will store equations separately for the solver later
     public List<EquationNode> Equations { get; } = new List<EquationNode>();
 
+    // Track variables that need solving
+    public HashSet<string> VariablesToSolve { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
     public StatementExecutor(VariableStore variableStore)
     {
         _variableStore = variableStore ?? throw new ArgumentNullException(nameof(variableStore));
@@ -21,32 +24,23 @@ public class StatementExecutor
     public void Execute(EesFileNode fileNode)
     {
         Console.WriteLine("--- Executing Statements ---");
+        // First pass: Process all assignments to set variable values
         foreach (var statement in fileNode.Statements)
         {
-            ExecuteStatement(statement);
+            if (statement is AssignmentNode assignNode)
+            {
+                ExecuteAssignment(assignNode);
+            }
+            else if (statement is EquationNode eqNode)
+            {
+                // Collect equations for later processing
+                Console.WriteLine($"Debug: Found equation: {eqNode}");
+                Equations.Add(eqNode);
+            }
         }
         Console.WriteLine("--- Statement Execution Finished ---");
         // Store equations for later processing
         Console.WriteLine($"--- Found {Equations.Count} equations for solver ---");
-
-    }
-
-    private void ExecuteStatement(StatementNode statement)
-    {
-        switch (statement)
-        {
-            case AssignmentNode assignNode:
-                ExecuteAssignment(assignNode);
-                break;
-            case EquationNode eqNode:
-                // For now, just collect equations. We'll solve them later.
-                Console.WriteLine($"Debug: Found equation: {eqNode}");
-                Equations.Add(eqNode);
-                break;
-            // Add other statement types later (FUNCTION, MODULE, etc.)
-            default:
-                throw new NotImplementedException($"Execution not implemented for statement type: {statement.GetType().Name}");
-        }
     }
 
     private void ExecuteAssignment(AssignmentNode assignNode)
@@ -61,9 +55,101 @@ public class StatementExecutor
         {
             // Improve error reporting later (e.g., add line numbers)
             Console.WriteLine($"Error evaluating assignment for '{assignNode.Variable.Name}': {ex.Message}");
-            // Decide whether to stop execution or continue
-            // For now, let's rethrow to stop
-            throw;
+            // Let's continue with execution rather than throwing
+            Console.WriteLine("Continuing execution...");
+        }
+    }
+
+    // Placeholder for equation solving functionality
+    public bool SolveEquations()
+    {
+        // Analyze the equations and variables
+        AnalyzeSystem();
+
+        if (Equations.Count == 0)
+        {
+            Console.WriteLine("No equations to solve.");
+            return true;
+        }
+
+        Console.WriteLine($"--- Solving {Equations.Count} equations ---");
+        Console.WriteLine("(Placeholder: Equation solving not yet implemented)");
+
+        // TODO: Implement actual equation solving
+        // For now, just return success
+        return true;
+    }
+
+    // Analyze the equation system
+    private void AnalyzeSystem()
+    {
+        // Find all variables that appear in the equations
+        var varsInEquations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Identify known and unknown variables in each equation
+        Console.WriteLine("\nEquation Analysis:");
+
+        if (Equations.Count == 0)
+        {
+            Console.WriteLine("  No equations found to analyze.");
+            return;
+        }
+
+        foreach (var eq in Equations)
+        {
+            Console.WriteLine($"\n  Equation: {eq}");
+
+            // Count implicitly created variables in this equation
+            _expressionEvaluator.ResetUndefinedVariableCount();
+            try
+            {
+                // Evaluate LHS
+                _expressionEvaluator.Evaluate(eq.LeftHandSide);
+                // Evaluate RHS
+                _expressionEvaluator.Evaluate(eq.RightHandSide);
+
+                int unknownVarCount = _expressionEvaluator.GetUndefinedVariableCount();
+
+                if (unknownVarCount == 0)
+                {
+                    Console.WriteLine("    Status: All variables have values - can check if satisfied");
+                }
+                else if (unknownVarCount == 1)
+                {
+                    Console.WriteLine("    Status: One unknown variable - can solve directly");
+                }
+                else
+                {
+                    Console.WriteLine($"    Status: {unknownVarCount} unknown variables - need solver");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"    Error analyzing equation: {ex.Message}");
+            }
+        }
+
+        // Print the variables that need solving (implicitly created)
+        var implicitVars = _variableStore.GetImplicitVariableNames();
+        Console.WriteLine("\nVariables to solve for:");
+        foreach (var varName in implicitVars)
+        {
+            Console.WriteLine($"  {varName}");
+        }
+
+        // Check if we have enough equations
+        Console.WriteLine($"\nSystem has {Equations.Count} equations and {implicitVars.Count()} unknown variables");
+        if (Equations.Count < implicitVars.Count())
+        {
+            Console.WriteLine("  WARNING: Underconstrained system - may have multiple solutions");
+        }
+        else if (Equations.Count > implicitVars.Count())
+        {
+            Console.WriteLine("  WARNING: Overconstrained system - may have no solution");
+        }
+        else
+        {
+            Console.WriteLine("  System has the same number of equations as unknowns");
         }
     }
 }

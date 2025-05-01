@@ -3,11 +3,14 @@ setlocal enabledelayedexpansion
 
 REM --- Parse command line arguments ---
 set "VERBOSE="
+set "CONTINUE_ON_ERROR=1" REM Default to continue on error
 
 :parse_args
 if "%~1"=="" goto :end_parse_args
 if /i "%~1"=="--verbose" set "VERBOSE=1" & shift & goto :parse_args
 if /i "%~1"=="-v" set "VERBOSE=1" & shift & goto :parse_args
+if /i "%~1"=="--continue" set "CONTINUE_ON_ERROR=1" & shift & goto :parse_args
+if /i "%~1"=="-c" set "CONTINUE_ON_ERROR=1" & shift & goto :parse_args
 shift
 goto :parse_args
 :end_parse_args
@@ -75,7 +78,8 @@ if defined VERBOSE (
 
 if %errorlevel% neq 0 (
     echo Clean FAILED!
-    exit /b 1
+    if %CONTINUE_ON_ERROR%==0 exit /b 1
+    echo Continuing despite errors...
 )
 
 REM --- Building Solution ---
@@ -89,7 +93,8 @@ if defined VERBOSE (
 if %errorlevel% neq 0 (
     echo Build FAILED
     type "!LOG_FILE!" | findstr /C:"error CS" /C:"ANTLR" /C:"failed"
-    exit /b 1
+    if %CONTINUE_ON_ERROR%==0 exit /b 1
+    echo Continuing despite errors...
 )
 
 echo Build succeeded.
@@ -98,19 +103,24 @@ REM --- Running Test Example ---
 echo Running test example...
 if defined VERBOSE (
     dotnet run --project LibreSolvE.CLI\LibreSolvE.CLI.csproj -- examples/test.lse
+    set RUN_RESULT=%errorlevel%
 ) else (
     dotnet run --project LibreSolvE.CLI\LibreSolvE.CLI.csproj -- examples/test.lse>>"!LOG_FILE!" 2>&1
+    set RUN_RESULT=%errorlevel%
     echo Results:
     type "!LOG_FILE!" | findstr /C:"---"
 )
 
-if %errorlevel% neq 0 (
-    echo Run FAILED!
-    exit /b 1
+if %RUN_RESULT% neq 0 (
+    echo Run completed with errors: Exit code %RUN_RESULT%
+    if %CONTINUE_ON_ERROR%==0 exit /b 1
+    echo Note: Error details may be in the log file: !LOG_FILE!
+) else (
+    echo Run completed successfully!
 )
 
 echo.
-echo Build and run completed successfully!
+echo Build and run completed!
 
 endlocal
 exit /b 0

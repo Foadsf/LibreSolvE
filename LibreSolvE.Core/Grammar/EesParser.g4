@@ -11,8 +11,8 @@ eesFile : statement* EOF;
 // --- Statements ---
 // For now, only equations and assignments
 statement
-    : equation              # EquationStatement
-    | assignment            # AssignmentStatement // Add later
+    : assignment            # AssignmentStatement
+    | equation              # EquationStatement
   //| functionDefinition    # FuncDefStatement    // Add later
   //| procedureDefinition # ProcDefStatement  // Add later
   //| moduleDefinition    # ModuleDefStatement// Add later
@@ -20,12 +20,9 @@ statement
   //| callStatement         # CallStatement     // Add later
     ;
 
-// --- Basic Equation ---
-equation : lhs=expression EQ rhs=expression SEMI? ; // LHS = RHS, optional semicolon
-
-// --- Assignment ---
-// Simple assignment T = 100, handle units later
-assignment : variable=ID EQ rhs=expression SEMI? ; // Variable = expression
+// Rules for equation and assignment remain the same
+equation : lhs=expression EQ rhs=expression SEMI? ;
+assignment : variable=ID EQ rhs=expression SEMI? ;
 
 // --- Expressions (Start simple, build precedence) ---
 // Basic arithmetic - add more levels for precedence later
