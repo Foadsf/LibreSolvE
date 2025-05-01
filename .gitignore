@@ -1,0 +1,84 @@
+# Mac
+.DS_Store
+
+# Rider
+.idea/
+*.user
+*.suo
+
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Visual Studio
+*.sln.docstates
+*.suo
+*.user
+*.userosscache
+*.sln.metaproj
+*.projuser
+*.ilk
+*.meta
+*.obj
+*.obj/
+*.pch
+*.pdb
+*.props
+*.sdf
+*.tlog
+*.tmp
+*.tmp_proj
+*.vs/
+*.vspscc
+*.vssscc
+*.wasm
+_UpgradeReport_Files/
+UpgradeLog*.XML
+UpgradeLog*.htm
+vs.dependencies.props
+v16/
+v17/
+Publish/
+Generated/
+
+# Build results
+[Bb]in/
+[Oo]bj/
+
+# NuGet Packages
+packages/
+*.nupkg
+*.snupkg
+AppPackages/
+Bundle/
+
+# Dot Uncrustify temp file
+uncrustify.*.cfg
+
+# Dotnet Build Tool temp file
+project.lock.json
+project.assets.json
+*.nuget.props
+*.nuget.targets
+*.nuget.restore.lock
+
+# MSTest test Results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+
+# NUnit
+*.VisualState.xml
+TestResult.xml
+nunit-*.xml
+
+# Test Coverage files
+*.coverage
+*.coveragexml
+
+# BuildRite Command Line Tool
+_build/
+Result/
