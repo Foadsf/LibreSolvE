@@ -21,18 +21,18 @@ statement
     ;
 
 // --- Basic Equation ---
-equation : expression EQ expression SEMI? ; // LHS = RHS, optional semicolon
+equation : lhs=expression EQ rhs=expression SEMI? ; // LHS = RHS, optional semicolon
 
 // --- Assignment ---
 // Simple assignment T = 100, handle units later
-assignment : ID EQ expression SEMI? ; // Variable = expression
+assignment : variable=ID EQ rhs=expression SEMI? ; // Variable = expression
 
 // --- Expressions (Start simple, build precedence) ---
 // Basic arithmetic - add more levels for precedence later
 expression
-    : expression (MUL | DIV) expression    # MulDivExpr // Higher precedence
-    | expression (PLUS | MINUS) expression # AddSubExpr // Lower precedence
-    | atom                                 # AtomExpr   // Base case
+    : left=expression op=(MUL | DIV) right=expression    # MulDivExpr // Higher precedence
+    | left=expression op=(PLUS | MINUS) right=expression # AddSubExpr // Lower precedence
+    | atom                                              # AtomExpr   // Base case
     ;
 
 // --- Basic Building Blocks ---

@@ -2,6 +2,7 @@
 using System.IO; // Required for file operations
 using Antlr4.Runtime;
 using Antlr4.Runtime.Misc;
+using LibreSolvE.Core.Ast; // Add this line to reference AST types
 using LibreSolvE.Core.Parsing;
 
 // Minimal implementation for Phase 0
@@ -23,48 +24,45 @@ if (!File.Exists(inputFilePath))
 try
 {
     Console.WriteLine($"--- Reading file: {inputFilePath} ---");
-    // Read the entire file content
     string input = File.ReadAllText(inputFilePath);
-
-    // Create Antlr input stream from the string
     AntlrInputStream inputStream = new AntlrInputStream(input);
-
-    // Create the lexer
     EesLexer lexer = new EesLexer(inputStream);
-    // Optional: Remove default console error listener if you want custom handling
-    // lexer.RemoveErrorListeners();
-    // lexer.AddErrorListener(new MyCustomLexerErrorListener()); // Add later if needed
-
-    // Create token stream from lexer
     CommonTokenStream commonTokenStream = new CommonTokenStream(lexer);
-
-    // Create the parser
     EesParser parser = new EesParser(commonTokenStream);
-    // Optional: Remove default console error listener
-    // parser.RemoveErrorListeners();
-    // parser.AddErrorListener(new MyCustomParserErrorListener()); // Add later if needed
+
+    // Remove default error listener for cleaner output IF NEEDED, otherwise keep for debugging
+    parser.RemoveErrorListeners();
+    parser.AddErrorListener(new ConsoleErrorListener<IToken>()); // Standard listener
 
     Console.WriteLine("--- Attempting to parse file content ---");
+    EesParser.EesFileContext context = parser.eesFile(); // Parse
 
-    // Start parsing from the entry rule 'eesFile'
-    EesParser.EesFileContext context = parser.eesFile();
-
-    // Basic check: Did ANTLR report syntax errors?
     if (parser.NumberOfSyntaxErrors > 0)
     {
         Console.WriteLine($"--- Parsing FAILED with {parser.NumberOfSyntaxErrors} syntax errors ---");
-        // The default error listener prints details to Console.Error
-        return 1; // Indicate failure
+        return 1;
     }
-
     Console.WriteLine("--- Parsing SUCCESSFUL (Basic syntax check passed) ---");
 
-    // *** Placeholder for next step: ***
-    // Console.WriteLine("--- Building Abstract Syntax Tree (AST)... ---");
-    // var astBuilder = new AstBuilder(); // Create this class later
-    // var rootNode = astBuilder.VisitEesFile(context); // Create AstBuilder Visitor later
-    // Console.WriteLine("--- AST Built (Structure not shown) ---");
+    // *** NEW VISITOR STEP ***
+    Console.WriteLine("--- Building Abstract Syntax Tree (AST)... ---");
+    var astBuilder = new AstBuilderVisitor();
+    AstNode rootNode = astBuilder.VisitEesFile(context); // Visit the parse tree root
 
+    if (rootNode is EesFileNode fileNode)
+    {
+        Console.WriteLine($"--- AST Built Successfully ({fileNode.Statements.Count} statements found) ---");
+        // Optional: Print the constructed AST for debugging
+        // Console.WriteLine("--- Constructed AST ---");
+        // Console.WriteLine(rootNode.ToString());
+        // Console.WriteLine("-----------------------");
+    }
+    else
+    {
+        Console.WriteLine("--- AST Building FAILED: Root node is not an EesFileNode ---");
+        return 1; // Indicate failure
+    }
+    // *** END NEW VISITOR STEP ***
 
     return 0; // Indicate success
 }
