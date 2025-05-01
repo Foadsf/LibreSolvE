@@ -82,3 +82,9 @@ nunit-*.xml
 # BuildRite Command Line Tool
 _build/
 Result/
+
+# Log files
+/logs/
+
+# others
+repomix-output.xml

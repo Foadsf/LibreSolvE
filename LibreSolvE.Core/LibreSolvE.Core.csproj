@@ -4,6 +4,24 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Antlr4UseCSharpGenerator>true</Antlr4UseCSharpGenerator>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ANTLR grammar files -->
+    <Antlr4 Include="Grammar\EesLexer.g4">
+      <Package>LibreSolvE.Core.Parsing</Package>
+    </Antlr4>
+    <Antlr4 Include="Grammar\EesParser.g4">
+      <Package>LibreSolvE.Core.Parsing</Package>
+      <Dependency>Grammar\EesLexer.g4</Dependency>
+    </Antlr4>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Antlr4.Runtime.Standard" Version="4.13.1" />
+    <PackageReference Include="Antlr4BuildTasks" Version="12.2.0" PrivateAssets="all" />
+  </ItemGroup>
 
 </Project>
