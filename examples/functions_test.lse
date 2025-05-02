@@ -1,0 +1,37 @@
+{ Example file using built-in functions and units in LibreSolvE }
+"This demonstrates math functions, unit specifications, and solving capabilities"
+
+{ Constants and known values }
+pi := 3.14159265359
+g := 9.81 "[m/s^2]" // Gravitational acceleration
+
+{ Simple function examples }
+y1 := SIN(pi/4)   // Should be ~0.7071
+y2 := COS(pi/3)   // Should be ~0.5
+y3 := TAN(pi/4)   // Should be ~1.0
+y4 := SQRT(2)     // Should be ~1.414
+y5 := LOG(10)     // Should be ~2.3026 (natural log)
+y6 := LOG10(100)  // Should be 2.0
+y7 := ABS(0-5)    // Should be 5 (fixed from ABS(-5))
+y8 := EXP(1)      // Should be ~2.7183
+y9 := MAX(3, 7)   // Should be 7
+y10 := MIN(3, 7)  // Should be 3
+y11 := ROUND(3.14159, 2) // Should be 3.14
+
+{ Pendulum problem with functions and units }
+L := 1 "[m]"            // Pendulum length
+theta_max := 15 "[deg]" // Maximum angle in degrees
+theta_rad := theta_max * pi / 180  // Convert to radians
+
+{ Period calculation - direct assignment }
+T := 2 * pi * SQRT(L / g)  // Period of pendulum
+
+{ Maximum height calculation - direct assignment }
+h := L * (1 - COS(theta_rad)) "[m]"  // Height at maximum swing
+
+{ Maximum velocity equation - to be solved }
+v_max^2 = 2 * g * h  // Maximum velocity equation
+
+{ A simple system of equations to demonstrate equation solving }
+x + y = 10
+y = 2 * x

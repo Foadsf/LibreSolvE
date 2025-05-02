@@ -79,7 +79,7 @@ if errorlevel 1 (
 
 echo Build succeeded.
 
-REM --- Running all example files ---
+REM --- Running all example files in examples ---
 echo.
 echo Running all example files in %EXAMPLE_DIR%...
 
@@ -91,7 +91,7 @@ if not exist "%EXAMPLE_DIR%" (
 for %%F in ("%EXAMPLE_DIR%\*.lse") do (
     echo.
     echo ===== Processing: %%~nxF =====
-    call run_cli.bat "%%F"
+    call dotnet run --project LibreSolvE.CLI\LibreSolvE.CLI.csproj -- "%%F"
 
     if errorlevel 1 (
         echo FAILED: Processing %%~nxF

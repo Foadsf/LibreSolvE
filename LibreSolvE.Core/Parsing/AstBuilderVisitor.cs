@@ -3,6 +3,7 @@ using Antlr4.Runtime.Misc;
 using Antlr4.Runtime.Tree;
 using LibreSolvE.Core.Ast;
 using System;
+using System.Collections.Generic;
 using System.Globalization; // For consistent number parsing
 using System.Linq;
 
@@ -140,17 +141,14 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
     }
 
     /// <summary>
-    /// Visits a power expression. Needs POW token in Lexer and rule in Parser if not already present.
-    /// Assuming POW token exists and a rule like:
-    /// expression : left=expression op=POW right=expression # PowExpr
+    /// Visits a power expression.
     /// </summary>
-    // public override AstNode VisitPowExpr([NotNull] EesParser.PowExprContext context)
-    // {
-    //     ExpressionNode left = (ExpressionNode)Visit(context.left);
-    //     ExpressionNode right = (ExpressionNode)Visit(context.right);
-    //     return new BinaryOperationNode(left, BinaryOperator.Power, right);
-    // }
-
+    public override AstNode VisitPowExpr([NotNull] EesParser.PowExprContext context)
+    {
+        ExpressionNode left = (ExpressionNode)Visit(context.left);
+        ExpressionNode right = (ExpressionNode)Visit(context.right);
+        return new BinaryOperationNode(left, BinaryOperator.Power, right);
+    }
 
     /// <summary>
     /// Visits a parenthesized expression. Returns the AST node for the inner expression.
@@ -200,16 +198,41 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
         return new VariableNode(context.ID().GetText());
     }
 
-    // TODO: Add VisitFunctionCallAtom when function calls are added to the grammar
-    // public override AstNode VisitFuncCallAtom([NotNull] EesParser.FuncCallAtomContext context)
-    // {
-    //     return Visit(context.functionCall());
-    // }
-    // public override AstNode VisitFunctionCall([NotNull] EesParser.FunctionCallContext context)
-    // {
-    //     // Logic to create FunctionCallNode
-    // }
+    /// <summary>
+    /// Visits a function call and creates a FunctionCallNode.
+    /// </summary>
+    public override AstNode VisitFunctionCall([NotNull] EesParser.FunctionCallContext context)
+    {
+        string functionName = context.fname.Text;
+        var arguments = new List<ExpressionNode>();
 
+        // Process arguments if any
+        if (context.exprList() != null)
+        {
+            foreach (var exprContext in context.exprList().expression())
+            {
+                var argNode = Visit(exprContext);
+                if (argNode is ExpressionNode expr)
+                {
+                    arguments.Add(expr);
+                }
+                else
+                {
+                    Console.Error.WriteLine($"Warning: Function argument produced non-expression node: {argNode?.GetType().Name}");
+                }
+            }
+        }
+
+        return new FunctionCallNode(functionName, arguments);
+    }
+
+    /// <summary>
+    /// Visits a function call atom and delegates to the function call visitor.
+    /// </summary>
+    public override AstNode VisitFuncCallAtom([NotNull] EesParser.FuncCallAtomContext context)
+    {
+        return Visit(context.functionCall());
+    }
     #endregion
 
     #region Default Aggregation (Optional)

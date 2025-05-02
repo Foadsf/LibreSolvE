@@ -3,6 +3,7 @@ using Antlr4.Runtime.Misc;
 using LibreSolvE.Core.Ast;
 using LibreSolvE.Core.Parsing; // Add this import for ANTLR-generated classes
 using System;
+using System.Collections.Generic;
 using System.Globalization; // For parsing numbers consistently
 
 namespace LibreSolvE.Core.Evaluation;
@@ -13,12 +14,19 @@ namespace LibreSolvE.Core.Evaluation;
 public class ExpressionEvaluatorVisitor
 {
     private readonly VariableStore _variableStore;
+    private readonly FunctionRegistry _functionRegistry;
     private bool _warningsAsErrors = false;
     private int _undefinedVariableCount = 0;
 
     public ExpressionEvaluatorVisitor(VariableStore variableStore, bool warningsAsErrors = false)
+        : this(variableStore, new FunctionRegistry(), warningsAsErrors)
+    {
+    }
+
+    public ExpressionEvaluatorVisitor(VariableStore variableStore, FunctionRegistry functionRegistry, bool warningsAsErrors = false)
     {
         _variableStore = variableStore ?? throw new ArgumentNullException(nameof(variableStore));
+        _functionRegistry = functionRegistry ?? throw new ArgumentNullException(nameof(functionRegistry));
         _warningsAsErrors = warningsAsErrors;
     }
 
@@ -41,8 +49,8 @@ public class ExpressionEvaluatorVisitor
                 return EvaluateVariable(var);
             case BinaryOperationNode binOp:
                 return EvaluateBinaryOperation(binOp);
-            // case FunctionCallNode funcCall: // TODO: Add later
-            //     return EvaluateFunctionCall(funcCall);
+            case FunctionCallNode funcCall:
+                return EvaluateFunctionCall(funcCall);
             default:
                 throw new NotImplementedException($"Evaluation not implemented for AST node type: {node.GetType().Name}");
         }
@@ -83,5 +91,29 @@ public class ExpressionEvaluatorVisitor
         };
     }
 
-    // TODO: Implement EvaluateFunctionCall later
+    private double EvaluateFunctionCall(FunctionCallNode funcCall)
+    {
+        // Check if function exists
+        if (!_functionRegistry.HasFunction(funcCall.FunctionName))
+        {
+            throw new KeyNotFoundException($"Function '{funcCall.FunctionName}' is not defined");
+        }
+
+        // Evaluate all arguments
+        double[] argValues = new double[funcCall.Arguments.Count];
+        for (int i = 0; i < funcCall.Arguments.Count; i++)
+        {
+            argValues[i] = Evaluate(funcCall.Arguments[i]);
+        }
+
+        // Call the function from the registry
+        try
+        {
+            return _functionRegistry.EvaluateFunction(funcCall.FunctionName, argValues);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Error evaluating function '{funcCall.FunctionName}': {ex.Message}", ex);
+        }
+    }
 }

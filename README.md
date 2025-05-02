@@ -2,7 +2,7 @@
 
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL_v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
 [![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen)]() <!-- Replace with actual CI badge later -->
-[![Current Version](https://img.shields.io/badge/Version-0.1.0--alpha-orange)]() <!-- Update as versions release -->
+[![Current Version](https://img.shields.io/badge/Version-0.2.0--alpha-orange)]() <!-- Updated version -->
 
 **LibreSolvE** is a Free, Libre, and Open Source Software (FLOSS) project aiming to provide a powerful and flexible environment for solving systems of algebraic equations, particularly inspired by the syntax and functionality of the popular Engineering Equation Solver (EES). Built using modern C# and .NET with the robust ANTLR parser generator, LibreSolvE is designed for engineers, scientists, students, and educators who need a reliable, cross-platform tool for numerical analysis and simulation.
 
@@ -33,7 +33,7 @@ LibreSolvE aims to fill this gap by providing a FLOSS alternative that:
 *   **Is Extensible:** Designed with a core solving engine and distinct interfaces (CLI, planned TUI/GUI).
 *   **Leverages FLOSS Libraries:** Integrates powerful libraries like ANTLR for parsing and MathNet.Numerics for numerical computations, promoting robustness and avoiding reinvention.
 
-This project is currently in the **alpha stage**, focusing on core parsing and solving capabilities via a Command Line Interface (CLI).
+This project is currently in the **alpha stage**, focusing on core parsing, solving capabilities, and built-in functions via a Command Line Interface (CLI).
 
 ## Goals
 
@@ -51,31 +51,50 @@ This project is currently in the **alpha stage**, focusing on core parsing and s
     *   Recognizes EES-style comments (`{...}`, `"..."`, `//...`).
     *   Parses assignments (`Var := Value` or `Var = Value` treated as assignment if RHS is constant).
     *   Parses equations (`LHS = RHS`).
-    *   Handles basic arithmetic expressions (`+`, `-`, `*`, `/`).
+    *   Handles basic arithmetic expressions (`+`, `-`, `*`, `/`, `^`).
     *   Builds an Abstract Syntax Tree (AST) representing the input.
+
+*   **Built-in Functions:**
+    *   Trigonometric: `SIN`, `COS`, `TAN`, `ASIN`, `ACOS`, `ATAN`, `ATAN2`
+    *   Hyperbolic: `SINH`, `COSH`, `TANH`
+    *   Exponential & Logarithmic: `EXP`, `LOG` (natural), `LOG10`, `LN`
+    *   Numeric Utilities: `SQRT`, `ABS`, `MIN`, `MAX`, `ROUND`
+    *   Power: `POW`
+    *   Conditional: `IF`
+
 *   **Execution:**
     *   Distinguishes between assignments and equations based on context (explicit `:=` or `Var = Constant`).
     *   Executes assignments to populate a variable store.
     *   Collects equations requiring simultaneous solution.
+
 *   **Solving:**
     *   Uses MathNet.Numerics library for solving systems of non-linear equations.
-    *   Currently employs a derivative-free Nelder-Mead simplex optimizer to find solutions minimizing the sum of squared residuals.
+    *   Employs derivative-free Nelder-Mead simplex optimizer to find solutions minimizing the sum of squared residuals.
+    *   Initial support for Levenberg-Marquardt algorithm (experimental).
     *   Identifies unknown variables automatically.
     *   Handles basic square systems and warns about under/overdetermined systems.
+    *   Supports guess values for better convergence.
+
+*   **Unit Support:**
+    *   Basic parsing of unit annotations from comments and brackets (e.g., `"[m]"`, `"[J/kg-K]"`).
+    *   Display of units alongside variable values in output.
+    *   Framework for future unit compatibility checking.
+
 *   **CLI (`lse`):**
     *   Takes an input `.lse` file path as an argument.
-    *   Outputs processing steps, results, and variable store contents to the console (and optionally a log file via the build script).
+    *   Allows selection of solver algorithm via command-line options.
+    *   Outputs processing steps, results, and variable store contents to the console.
     *   Returns non-zero exit code on failure.
-*   **Build System:** Includes a batch script (`build_run.bat`) for automated cleaning, building, and running of examples on Windows, including temporary Java environment setup for ANTLR tasks.
+
+*   **Build System:** Includes batch scripts (`build_run.bat`, `run_cli.bat`) for automated cleaning, building, and running of examples on Windows, including temporary Java environment setup for ANTLR tasks.
 
 ## Planned Features
 
-*   **Built-in Functions:** Mathematical (`SIN`, `COS`, `LOG`, `EXP`, `SQRT`, etc.) and potentially thermodynamic wrappers.
+*   **Unit Handling Improvements:** Complete unit conversion and compatibility checking using UnitsNet.
 *   **Thermophysical Properties:** Integration with CoolProp library for a wide range of fluids.
-*   **Unit Handling:** Parsing, checking consistency, and conversion using UnitsNet.
 *   **Solver Enhancements:**
-    *   Support for guess values and bounds.
-    *   Gradient-based solvers (e.g., Newton-Raphson, Levenberg-Marquardt with numerical Jacobian).
+    *   Complete implementation of Levenberg-Marquardt for gradient-based solving.
+    *   Support for guess bounds and constraints.
     *   Improved handling of under/overdetermined systems.
     *   Equation blocking (Tarjan's algorithm or similar).
 *   **Advanced Syntax:** Arrays, `DUPLICATE`, `SUM`/`PRODUCT`, complex numbers, strings, directives (`$INCLUDE`, `$COMMON`, etc.).
@@ -110,38 +129,67 @@ This project is currently in the **alpha stage**, focusing on core parsing and s
 
 ### Running
 
-1.  **Use the build script:** The `build_run.bat` script also runs the CLI against example files. To run a specific file:
+1.  **Use the build script:** The `build_run.bat` script also runs the CLI against example files:
     ```cmd
-    build_run.bat examples\your_file.lse
+    build_run.bat
     ```
-    Output is logged to the `logs\` directory.
-2.  **Run directly via `dotnet run`:**
+2.  **Run a specific file with solver options:**
+    ```cmd
+    run_cli.bat examples\your_file.lse --nelder-mead
+    run_cli.bat examples\your_file.lse --levenberg-marquardt
+    ```
+3.  **Run directly via `dotnet run`:**
     ```cmd
     dotnet run --project LibreSolvE.CLI\LibreSolvE.CLI.csproj -- examples\your_file.lse
     ```
 
-## Syntax Example (`example.lse`)
+## Syntax Example
+
+### Basic Equation System (test.lse)
 
 ```ees
 { Simple Heat Transfer Example }
 
-" Parameters "
-T_inf := 20 "[C]"     // Ambient temperature (using explicit assignment)
-T_init = 100 "[C]"   // Initial temperature (using = treated as assignment)
-h = 10 "[W/m^2-K]"
-Area = 0.05 "[m^2]"
-m = 2 "[kg]"
-Cp = 450 "[J/kg-K]"
+T_cold = 20
+Eff = 0.85
+CP = 4.18
+m_dot = 2
+Q_dot = 200
 
-" Equation defining the rate of change "
-dTdt = h * Area * (T_inf - T) / (m * Cp) // This is the equation to solve implicitly
-
-" Integration (Placeholder - Requires Solver/Integration Feature) "
-// T = T_init + INTEGRAL(dTdt, time, 0, Time_final)
-
-" Variables to find: T, dTdt "
+T_hot = T_cold + DeltaT * Eff
+DeltaT = Q_dot / m_dot / CP
+DeltaT = (T_hot - T_cold) / Eff
 ```
-*(Note: This example includes features like INTEGRAL not yet implemented).*
+
+### Function Example (functions_test.lse)
+
+```ees
+{ Example file using built-in functions and units }
+
+{ Constants and known values }
+pi := 3.14159265359
+g := 9.81 "[m/s^2]" // Gravitational acceleration
+
+{ Simple function examples }
+y1 := SIN(pi/4)   // Should be ~0.7071
+y2 := COS(pi/3)   // Should be ~0.5
+y3 := SQRT(2)     // Should be ~1.414
+y4 := LOG(10)     // Should be ~2.3026 (natural log)
+
+{ Pendulum problem with functions and units }
+L := 1 "[m]"            // Pendulum length
+theta_max := 15 "[deg]" // Maximum angle in degrees
+theta_rad := theta_max * pi / 180  // Convert to radians
+
+{ Period calculation - direct assignment }
+T := 2 * pi * SQRT(L / g)  // Period of pendulum
+
+{ Maximum height calculation - direct assignment }
+h := L * (1 - COS(theta_rad)) "[m]"  // Height at maximum swing
+
+{ Maximum velocity equation - to be solved }
+v_max^2 = 2 * g * h  // Maximum velocity equation
+```
 
 ## Project Structure
 
@@ -149,25 +197,40 @@ dTdt = h * Area * (T_inf - T) / (m * Cp) // This is the equation to solve implic
 LibreSolvE/
 ├── .git/                 # Git repository data
 ├── .gitignore            # Files ignored by Git
-├── .vscode/              # VS Code settings (optional)
-│   └── settings.json
 ├── examples/             # Example .lse input files
 │   ├── test.lse
-│   └── test2.lse
+│   ├── test2.lse
+│   └── functions_test.lse
 ├── logs/                 # Log files (gitignored)
 │   └── build_run_...txt
 ├── LibreSolvE.Core/      # Core library project (parsing, AST, evaluation, solving)
 │   ├── Ast/              # Abstract Syntax Tree node classes
-│   ├── Evaluation/       # Classes for evaluation and solving (VariableStore, Solver, etc.)
+│   │   ├── AssignmentNode.cs
+│   │   ├── BinaryOperationNode.cs
+│   │   ├── EquationNode.cs
+│   │   ├── FunctionCallNode.cs
+│   │   └── ...
+│   ├── Evaluation/       # Classes for evaluation and solving
+│   │   ├── EquationSolver.cs
+│   │   ├── ExpressionEvaluatorVisitor.cs
+│   │   ├── FunctionRegistry.cs
+│   │   ├── SolverFactory.cs
+│   │   ├── SolverSettings.cs
+│   │   ├── UnitParser.cs
+│   │   └── VariableStore.cs
 │   ├── Grammar/          # ANTLR .g4 grammar files
+│   │   ├── EesLexer.g4
+│   │   └── EesParser.g4
 │   ├── Parsing/          # ANTLR visitor for AST building
-│   ├── LibreSolvE.Core.csproj
-│   └── ... (other .cs files)
+│   │   └── AstBuilderVisitor.cs
+│   └── LibreSolvE.Core.csproj
 ├── LibreSolvE.CLI/       # Command Line Interface project
 │   ├── LibreSolvE.CLI.csproj
 │   └── Program.cs
 ├── build_run.bat         # Windows build & run script
+├── run_cli.bat           # CLI execution script
 ├── LibreSolvE.sln        # Visual Studio Solution file
+├── global.json           # .NET SDK version configuration
 └── README.md             # This file
 ```
 

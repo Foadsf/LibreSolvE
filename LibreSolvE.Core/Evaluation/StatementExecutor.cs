@@ -9,14 +9,28 @@ namespace LibreSolvE.Core.Evaluation;
 public class StatementExecutor
 {
     private readonly VariableStore _variableStore;
+    private readonly FunctionRegistry _functionRegistry;
+    private readonly SolverSettings _solverSettings;
     private readonly ExpressionEvaluatorVisitor _expressionEvaluator;
-    public List<EquationNode> EquationsToSolve { get; } = new List<EquationNode>(); // Renamed
+    public List<EquationNode> EquationsToSolve { get; } = new List<EquationNode>();
 
     public StatementExecutor(VariableStore variableStore)
+        : this(variableStore, new FunctionRegistry())
+    {
+    }
+
+    public StatementExecutor(VariableStore variableStore, FunctionRegistry functionRegistry)
+        : this(variableStore, functionRegistry, new SolverSettings())
+    {
+    }
+
+    public StatementExecutor(VariableStore variableStore, FunctionRegistry functionRegistry, SolverSettings solverSettings)
     {
         _variableStore = variableStore ?? throw new ArgumentNullException(nameof(variableStore));
+        _functionRegistry = functionRegistry ?? throw new ArgumentNullException(nameof(functionRegistry));
+        _solverSettings = solverSettings ?? new SolverSettings();
         // WarningsAsErrors = false: Allow undefined vars during initial scan/assignment execution
-        _expressionEvaluator = new ExpressionEvaluatorVisitor(_variableStore, false);
+        _expressionEvaluator = new ExpressionEvaluatorVisitor(_variableStore, _functionRegistry, false);
     }
 
     // Helper to check if an expression can be evaluated to a constant *now*
@@ -121,7 +135,6 @@ public class StatementExecutor
         }
     }
 
-
     public bool SolveEquations()
     {
         if (EquationsToSolve.Count == 0)
@@ -130,8 +143,8 @@ public class StatementExecutor
             return true;
         }
 
-        // Pass only the equations that need solving
-        var solver = new EquationSolver(_variableStore, EquationsToSolve);
+        // Pass only the equations that need solving, along with the solver settings
+        var solver = new EquationSolver(_variableStore, _functionRegistry, EquationsToSolve, _solverSettings);
         bool success = solver.Solve();
 
         return success;

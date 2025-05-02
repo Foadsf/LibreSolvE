@@ -63,16 +63,39 @@ try
     Console.WriteLine($"--- AST Built Successfully ({fileNode.Statements.Count} statements found) ---");
     Console.WriteLine("--- Constructed AST ---\n" + rootAstNode.ToString() + "\n-----------------------"); // Optional debug
 
+    // 2.5 Extract units from the input file
+    Console.WriteLine("--- Extracting units from source ---");
+    var unitsDictionary = UnitParser.ExtractUnitsFromSourceText(inputText);
+    Console.WriteLine($"Found {unitsDictionary.Count} variables with units");
+
     // 3. Execute Statements (Assignments) and Collect Equations
     Console.WriteLine("--- Initializing Execution ---");
     var variableStore = new VariableStore();
-    var executor = new StatementExecutor(variableStore);
+
+    // Apply extracted units to the variable store
+    UnitParser.ApplyUnitsToVariableStore(variableStore, unitsDictionary);
+
+    var functionRegistry = new FunctionRegistry(); // Initialize function registry
+    var solverSettings = new SolverSettings(); // Default solver settings
+
+    // Choose solver type (can be made configurable via command line args in the future)
+    if (args.Length > 1 && args[1].Equals("--levenberg-marquardt", StringComparison.OrdinalIgnoreCase))
+    {
+        Console.WriteLine("Using Levenberg-Marquardt solver");
+        solverSettings.SolverType = SolverType.LevenbergMarquardt;
+    }
+    else
+    {
+        Console.WriteLine("Using Nelder-Mead solver (default)");
+        solverSettings.SolverType = SolverType.NelderMead;
+    }
+
+    var executor = new StatementExecutor(variableStore, functionRegistry);
 
     executor.Execute(fileNode); // Pass 1 (Assignments), Pass 2 (Collect Equations)
 
     Console.WriteLine("\n--- Variable Store State After Assignments ---");
     variableStore.PrintVariables();
-
 
     // 4. Solve Equations
     Console.WriteLine("\n--- Equation Solving Phase ---");

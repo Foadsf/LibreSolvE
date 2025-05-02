@@ -32,17 +32,28 @@ assignment
 // --- Expressions (Start simple, build precedence) ---
 // Basic arithmetic - add more levels for precedence later
 expression
-    : left=expression op=(MUL | DIV) right=expression    # MulDivExpr // Higher precedence
-    | left=expression op=(PLUS | MINUS) right=expression # AddSubExpr // Lower precedence
-    | atom                                              # AtomExpr   // Base case
+    : left=expression op=POW right=expression           # PowExpr       // Highest precedence
+    | left=expression op=(MUL | DIV) right=expression   # MulDivExpr    // Higher precedence
+    | left=expression op=(PLUS | MINUS) right=expression # AddSubExpr   // Lower precedence
+    | atom                                               # AtomExpr      // Base case
     ;
 
 // --- Basic Building Blocks ---
 atom
     : NUMBER                # NumberAtom
     | ID                    # VariableAtom
-  //| functionCall          # FuncCallAtom // Add later
-    | LPAREN expression RPAREN # ParenExpr // Parentheses for grouping
+    | functionCall          # FuncCallAtom  // Added function call
+    | LPAREN expression RPAREN # ParenExpr  // Parentheses for grouping
+    ;
+
+// Function call syntax
+functionCall
+    : fname=ID LPAREN exprList? RPAREN
+    ;
+
+// Expression list (for function arguments)
+exprList
+    : expression (COMMA expression)*
     ;
 
 // --- Units (Placeholder - handle properly later) ---
