@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LibreSolvE.Core", "LibreSol
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LibreSolvE.CLI", "LibreSolvE.CLI\LibreSolvE.CLI.csproj", "{505CBA3B-5D47-4631-9B6C-E081D91452EF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LibreSolvE.TUI", "LibreSolvE.TUI\LibreSolvE.TUI.csproj", "{145C7D64-7C90-4C85-9BFC-551803195A3E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -24,5 +26,9 @@ Global
 		{505CBA3B-5D47-4631-9B6C-E081D91452EF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{505CBA3B-5D47-4631-9B6C-E081D91452EF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{505CBA3B-5D47-4631-9B6C-E081D91452EF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{145C7D64-7C90-4C85-9BFC-551803195A3E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{145C7D64-7C90-4C85-9BFC-551803195A3E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{145C7D64-7C90-4C85-9BFC-551803195A3E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{145C7D64-7C90-4C85-9BFC-551803195A3E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
