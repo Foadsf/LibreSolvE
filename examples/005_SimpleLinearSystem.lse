@@ -1,0 +1,10 @@
+{ Test Case 005: Simple Linear System }
+" Solves: "
+" 2*x + y = 5 "
+" x - y = 1 "
+
+// Equations
+2*x + y = 5
+x - y = 1
+
+" Expected Result: x=2, y=1 "
