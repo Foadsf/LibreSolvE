@@ -26,6 +26,7 @@ SEMI    : ';';  // Add semicolon token
 
 // --- Literals ---
 NUMBER  : INT | FLOAT; // Combine integer and float logic
+STRING_LITERAL: '\'' ( '\'\'' | ~['] )* '\'' ; // String literals with single quotes
 
 // --- Identifiers ---
 ID      : [a-zA-Z] [a-zA-Z0-9_]* ('$' | LBRACK)? ; // Basic ID, allows $ or [ at end (for strings/arrays later)

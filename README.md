@@ -52,6 +52,7 @@ This project is currently in the **alpha stage**, focusing on core parsing, solv
     *   Parses assignments (`Var := Value` or `Var = Value` treated as assignment if RHS is constant).
     *   Parses equations (`LHS = RHS`).
     *   Handles basic arithmetic expressions (`+`, `-`, `*`, `/`, `^`).
+    *   Recognizes string literals in single quotes (`'string'`), supporting escaped quotes (`''`).
     *   Builds an Abstract Syntax Tree (AST) representing the input.
 
 *   **Built-in Functions:**
@@ -61,6 +62,14 @@ This project is currently in the **alpha stage**, focusing on core parsing, solv
     *   Numeric Utilities: `SQRT`, `ABS`, `MIN`, `MAX`, `ROUND`
     *   Power: `POW`
     *   Conditional: `IF`
+    *   Unit Support: `CONVERT(from_unit, to_unit)` for converting between unit systems
+
+*   **Unit Support:**
+    *   Basic parsing of unit annotations from comments and brackets (e.g., `"[m]"`, `"[J/kg-K]"`).
+    *   Display of units alongside variable values in output.
+    *   Unit conversion with `CONVERT` function (e.g., `CONVERT('ft', 'm')`) for length, mass, etc.
+    *   Temperature conversion with `CONVERTTEMP` function (e.g., `CONVERTTEMP('C', 'K', temp_c)`).
+    *   Framework for future unit compatibility checking.
 
 *   **Execution:**
     *   Distinguishes between assignments and equations based on context (explicit `:=` or `Var = Constant`).
