@@ -41,6 +41,7 @@ expression
 // --- Basic Building Blocks ---
 atom
     : NUMBER                # NumberAtom
+    | STRING_LITERAL        # StringAtom
     | ID                    # VariableAtom
     | functionCall          # FuncCallAtom  // Added function call
     | LPAREN expression RPAREN # ParenExpr  // Parentheses for grouping

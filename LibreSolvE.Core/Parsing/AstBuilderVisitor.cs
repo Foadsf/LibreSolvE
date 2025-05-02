@@ -246,4 +246,11 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
         return nextResult ?? aggregate;
     }
     #endregion
+
+    public override AstNode VisitStringAtom([NotNull] EesParser.StringAtomContext context)
+    {
+        // Get the full text, including quotes, and pass to the node constructor for unescaping
+        string literalWithQuotes = context.STRING_LITERAL().GetText();
+        return new StringLiteralNode(literalWithQuotes);
+    }
 }

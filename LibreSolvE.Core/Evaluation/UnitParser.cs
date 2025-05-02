@@ -1,125 +1,141 @@
 // LibreSolvE.Core/Evaluation/UnitParser.cs
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Reflection; // For robust quantity type check
 using System.Text.RegularExpressions;
-using Antlr4.Runtime;
-using Antlr4.Runtime.Tree;
-using LibreSolvE.Core.Parsing;
+using UnitsNet;
+using UnitsNet.Units;
 
 namespace LibreSolvE.Core.Evaluation;
 
 /// <summary>
-/// Utility class to extract units from comments in variable assignments and equations
+/// Utility class to extract units from source text and parse unit strings.
 /// </summary>
-public class UnitParser
+public static class UnitParser
 {
-    // Regular expression to match units in square brackets
-    private static readonly Regex UnitRegex = new Regex(@"\[([^\]]+)\]", RegexOptions.Compiled);
+    #region Static Data
 
-    // Regular expression to match units in comments
-    private static readonly Regex CommentUnitRegex = new Regex(@"//.*\[([^\]]+)\]|\{.*\[([^\]]+)\]|\"".*\[([^\]]+)\]", RegexOptions.Compiled);
+    // Regex to find assignment start (ID followed by = or :=)
+    private static readonly Regex AssignmentRegex =
+        new Regex(@"^\s*(?<var>[a-zA-Z_][a-zA-Z0-9_]*)\s*(:=|=)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    // Regex to find units within square brackets (prioritized)
+    private static readonly Regex UnitInBracketsRegex = new Regex(@"\[([^\]]+)\]", RegexOptions.Compiled);
+    // Regex to find units within standard EES comments brackets
+    private static readonly Regex UnitInCommentRegex = new Regex(@"(?:\{|\""|//).*?\[([^\]]+)\]", RegexOptions.Compiled);
+
+
+    // Dictionary mapping quantity Types TO THEIR UNIT ENUM TYPES
+    // Essential for providing context to the parser. Add more as needed.
+    private static readonly Dictionary<Type, Type> QuantityToUnitEnum = new Dictionary<Type, Type>
+    {
+        { typeof(Length), typeof(LengthUnit) },
+        { typeof(Mass), typeof(MassUnit) },
+        { typeof(Duration), typeof(DurationUnit) }, // Time
+        { typeof(Temperature), typeof(TemperatureUnit) },
+        { typeof(Pressure), typeof(PressureUnit) },
+        { typeof(Energy), typeof(EnergyUnit) },
+        { typeof(Power), typeof(PowerUnit) },
+        { typeof(Volume), typeof(VolumeUnit) },
+        { typeof(Area), typeof(AreaUnit) },
+        { typeof(Speed), typeof(SpeedUnit) },
+        { typeof(Acceleration), typeof(AccelerationUnit) },
+        { typeof(Force), typeof(ForceUnit) },
+        { typeof(Angle), typeof(AngleUnit) },
+        { typeof(Frequency), typeof(FrequencyUnit) },
+        { typeof(MassFlow), typeof(MassFlowUnit) },
+        { typeof(VolumeFlow), typeof(VolumeFlowUnit) },
+        { typeof(Density), typeof(DensityUnit) },
+        { typeof(SpecificEnergy), typeof(SpecificEnergyUnit) },
+        { typeof(SpecificEntropy), typeof(SpecificEntropyUnit) },
+        { typeof(Ratio), typeof(RatioUnit) } // For dimensionless Eff
+        // Add thermodynamic properties, viscosity, conductivity etc. as needed
+    };
+
+    // Manual mappings for complex units or problematic abbreviations.
+    private static readonly Dictionary<string, string> UnitMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        { "kJ/kg-K", "kJ/kg·K" }, // Replace '-' with '·' for UnitsNet SpecificEntropy
+        { "W/m-K", "W/m·K" },     // Replace '-' with '·' for UnitsNet ThermalConductivity
+        { "m/s^2", "m/s²" },      // Use superscript for acceleration
+        { "ft/s^2", "ft/s²" },
+        { "m^2", "m²" },
+        { "ft^2", "ft²" },
+        { "m^3", "m³" },
+        { "ft^3", "ft³" },
+        { "kg*m/s^2", "N" },      // Map compound to standard abbreviation
+        { "lbm", "lb" },          // Common alias for pound mass
+        { "lb", "lbf" },          // If lb means lbf, map it explicitly
+        // Map potentially ambiguous 'hp' to the desired default (e.g., Mechanical)
+        // The parser might recognize 'hp(I)', 'hp(M)', 'hp(E)' etc. if needed
+        { "hp", "hp(M)" }
+    };
+
+    #endregion
+
+    #region Public Methods
 
     /// <summary>
-    /// Extract units from a token stream
+    /// Extracts unit annotations from source code lines.
+    /// Prioritizes units in brackets [] over units in comments like //[unit] or {"[unit]"}.
     /// </summary>
-    /// <param name="tokens">The token stream to parse</param>
-    /// <returns>Dictionary mapping variable names to their units</returns>
-    public static Dictionary<string, string> ExtractUnitsFromTokenStream(CommonTokenStream tokens)
+    public static Dictionary<string, string> ExtractUnitsFromSource(string sourceText)
     {
         var variableUnits = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var lines = sourceText.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+        string? currentVarForUnit = null;
 
-        // Reset token stream to beginning
-        tokens.Reset();
-
-        var currentVariable = string.Empty;
-        var foundAssignment = false;
-
-        // Process tokens in sequence
-        while (tokens.LA(1) != TokenConstants.EOF)
+        foreach (var line in lines)
         {
-            var token = tokens.LT(1);
-            tokens.Consume();
+            var assignmentMatch = AssignmentRegex.Match(line);
+            string? unitFound = null;
 
-            // Look for variable identifiers
-            if (token.Type == EesLexer.ID)
+            if (assignmentMatch.Success)
             {
-                currentVariable = token.Text;
-                foundAssignment = false;
+                currentVarForUnit = assignmentMatch.Groups["var"].Value;
             }
-            // Look for assignment or equation operators
-            else if ((token.Type == EesLexer.EQ || token.Type == EesLexer.ASSIGN) && !string.IsNullOrEmpty(currentVariable))
+
+            if (currentVarForUnit != null)
             {
-                foundAssignment = true;
-            }
-            // Look for units in square brackets
-            else if (token.Type == EesLexer.LBRACK && foundAssignment)
-            {
-                // Collect text until we find a closing bracket
-                var unitText = new List<string>();
-                while (tokens.LA(1) != TokenConstants.EOF && tokens.LA(1) != EesLexer.RBRACK)
+                // Check for [unit] first
+                var bracketMatch = UnitInBracketsRegex.Match(line);
+                if (bracketMatch.Success)
                 {
-                    var unitToken = tokens.LT(1);
-                    tokens.Consume();
-                    unitText.Add(unitToken.Text);
+                    unitFound = bracketMatch.Groups[1].Value.Trim();
+                }
+                else
+                {
+                    // If not found, check for //[unit], {"[unit]"}, or ""[unit]""
+                    var commentMatch = UnitInCommentRegex.Match(line);
+                    if (commentMatch.Success)
+                    {
+                        // Group 1 captures content inside brackets within a comment
+                        unitFound = commentMatch.Groups[1].Value.Trim();
+                    }
                 }
 
-                // Skip the closing bracket
-                if (tokens.LA(1) == EesLexer.RBRACK)
+                if (unitFound != null)
                 {
-                    tokens.Consume();
-                }
-
-                // Store the unit for the current variable
-                variableUnits[currentVariable] = string.Join("", unitText);
-            }
-            // Look for units in comments
-            else if ((token.Type == EesLexer.COMMENT_SLASH ||
-                     token.Type == EesLexer.COMMENT_BRACE ||
-                     token.Type == EesLexer.COMMENT_QUOTE) &&
-                    foundAssignment)
-            {
-                var comment = token.Text;
-                var match = UnitRegex.Match(comment);
-
-                if (match.Success)
-                {
-                    variableUnits[currentVariable] = match.Groups[1].Value;
+                    Console.WriteLine($"Debug UnitParser: Found unit '[{unitFound}]' for variable '{currentVarForUnit}' on line: {line.Trim()}");
+                    variableUnits[currentVarForUnit] = unitFound;
+                    currentVarForUnit = null; // Reset after finding unit for this var
                 }
             }
 
-            // Reset if we encounter a semicolon or line break
-            if (token.Type == EesLexer.SEMI || token.Text.Contains("\n"))
+            // Reset currentVar if line is not empty/comment/whitespace and not an assignment start
+            if (!string.IsNullOrWhiteSpace(line) && !assignmentMatch.Success &&
+                !line.TrimStart().StartsWith("//") && !line.TrimStart().StartsWith("{") && !line.TrimStart().StartsWith("\""))
             {
-                currentVariable = string.Empty;
-                foundAssignment = false;
+                currentVarForUnit = null;
             }
         }
-
         return variableUnits;
     }
 
     /// <summary>
-    /// Extract units from the source text directly
+    /// Applies the extracted units to the VariableStore.
     /// </summary>
-    /// <param name="sourceText">The source code text to parse</param>
-    /// <returns>Dictionary mapping variable names to their units</returns>
-    public static Dictionary<string, string> ExtractUnitsFromSourceText(string sourceText)
-    {
-        var variableUnits = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        // Create a lexer to tokenize the source
-        var inputStream = new AntlrInputStream(sourceText);
-        var lexer = new EesLexer(inputStream);
-        var tokenStream = new CommonTokenStream(lexer);
-
-        return ExtractUnitsFromTokenStream(tokenStream);
-    }
-
-    /// <summary>
-    /// Apply extracted units to variables in the VariableStore
-    /// </summary>
-    /// <param name="variableStore">The variable store to update</param>
-    /// <param name="units">Dictionary mapping variable names to their units</param>
     public static void ApplyUnitsToVariableStore(VariableStore variableStore, Dictionary<string, string> units)
     {
         foreach (var kvp in units)
@@ -127,4 +143,53 @@ public class UnitParser
             variableStore.SetUnit(kvp.Key, kvp.Value);
         }
     }
+
+    /// <summary>
+    /// Parses a unit string, using mappings and iterating through known quantity types.
+    /// </summary>
+    /// <returns>A tuple containing the parsed unit Enum and its QuantityInfo.</returns>
+    /// <exception cref="UnitsNet.UnitNotFoundException">Thrown if the unit string cannot be parsed.</exception>
+    public static (Enum UnitEnum, QuantityInfo QuantityInfo) ParseUnitString(string unitStr)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(unitStr);
+        string originalUnitStr = unitStr;
+        string unitToParse = unitStr;
+
+        // Apply manual mapping first
+        if (UnitMappings.TryGetValue(unitStr, out string? mappedUnit) && mappedUnit != null)
+        {
+            unitToParse = mappedUnit;
+            Console.WriteLine($"Debug UnitParser: Mapped '{originalUnitStr}' to '{unitToParse}' for parsing.");
+        }
+
+        // Iterate through known Quantity Types and their corresponding Unit Enum Types
+        foreach (var kvp in QuantityToUnitEnum)
+        {
+            // Type quantityType = kvp.Key; // Not directly needed for parsing
+            Type unitEnumType = kvp.Value;
+
+            // Attempt parsing using the specific Unit Enum Type for context
+            if (UnitsNet.UnitParser.Default.TryParse(unitToParse, unitEnumType, CultureInfo.InvariantCulture, out Enum? unitEnum) && unitEnum != null)
+            {
+                // Parsed successfully to an Enum value. Now get QuantityInfo.
+                try
+                {
+                    // Create a dummy quantity to get info
+                    IQuantity quantity = Quantity.From(1.0, unitEnum);
+                    return (unitEnum, quantity.QuantityInfo);
+                }
+                catch (Exception ex)
+                {
+                    // Should generally not happen if TryParse succeeded, but catch defensively
+                    Console.WriteLine($"    Warning: Parsed '{unitToParse}' to {unitEnum} but failed QuantityInfo step: {ex.Message}");
+                    // Continue loop in case another quantity type works (unlikely)
+                }
+            }
+        }
+
+        // If loop completes without returning, parsing failed.
+        throw new UnitsNet.UnitNotFoundException($"Unit '{originalUnitStr}' (processed as '{unitToParse}') was not recognized by UnitsNet for any known quantity type.");
+    }
+
+    #endregion
 }

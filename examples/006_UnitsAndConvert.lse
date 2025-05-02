@@ -1,0 +1,25 @@
+{ Test Case 006: Unit Specification and Conversion }
+
+" Assign variables with units "
+Length_ft := 10 "[ft]"
+Width_in := 6 "[in]"
+Temp_C = 25 "[C]" // Use '=' for equation-like definition
+Mass_lb := 5 "[lbm]"
+
+" Convert units using the CONVERT function with STRING LITERALS "
+Length_m := Length_ft * CONVERT('ft', 'm') "[m]" // Convert ft to m
+Width_m := Width_in * CONVERT('in', 'm')   "[m]" // Convert in to m
+Mass_kg := Mass_lb * CONVERT('lbm', 'kg') "[kg]" // Convert lbm to kg
+
+" Placeholder for Temperature Conversion (requires dedicated function) "
+Temp_K := Temp_C + 273.15 // Placeholder until CONVERTTEMP is implemented
+
+" Perform calculations "
+Area := Length_m * Width_m "[m^2]"
+
+" Expected Values (approx): "
+" Length_m = 3.048 "
+" Width_m = 0.1524 "
+" Area = 0.4645 "
+" Mass_kg = 2.268 "
+" Temp_K = 298.15 (from placeholder) "

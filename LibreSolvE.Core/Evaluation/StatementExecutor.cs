@@ -9,21 +9,12 @@ namespace LibreSolvE.Core.Evaluation;
 public class StatementExecutor
 {
     private readonly VariableStore _variableStore;
-    private readonly FunctionRegistry _functionRegistry;
-    private readonly SolverSettings _solverSettings;
+    private readonly FunctionRegistry _functionRegistry; // Add field
+    private readonly SolverSettings _solverSettings; // Add field
     private readonly ExpressionEvaluatorVisitor _expressionEvaluator;
     public List<EquationNode> EquationsToSolve { get; } = new List<EquationNode>();
 
-    public StatementExecutor(VariableStore variableStore)
-        : this(variableStore, new FunctionRegistry())
-    {
-    }
-
-    public StatementExecutor(VariableStore variableStore, FunctionRegistry functionRegistry)
-        : this(variableStore, functionRegistry, new SolverSettings())
-    {
-    }
-
+    // Updated constructor
     public StatementExecutor(VariableStore variableStore, FunctionRegistry functionRegistry, SolverSettings solverSettings)
     {
         _variableStore = variableStore ?? throw new ArgumentNullException(nameof(variableStore));
@@ -143,7 +134,7 @@ public class StatementExecutor
             return true;
         }
 
-        // Pass only the equations that need solving, along with the solver settings
+        // Pass registry and settings to the solver
         var solver = new EquationSolver(_variableStore, _functionRegistry, EquationsToSolve, _solverSettings);
         bool success = solver.Solve();
 
