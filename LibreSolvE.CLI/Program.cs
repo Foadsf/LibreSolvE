@@ -4,7 +4,11 @@ using System.IO; // Required for file operations
 using Antlr4.Runtime; // ANTLR Runtime
 using LibreSolvE.Core.Parsing; // Your ANTLR generated parser/lexer namespace
 using LibreSolvE.Core.Ast;     // Your Abstract Syntax Tree node classes
-using LibreSolvE.Core.Evaluation; // Your Evaluation classes (VariableStore, Executor)
+using LibreSolvE.Core.Evaluation; // Your Evaluation classes (VariableStore, Executor, Solver)
+
+// --- Main Program Logic ---
+
+int exitCode = 0; // Default to success
 
 // Check if input file argument is provided
 if (args.Length == 0)
@@ -15,6 +19,7 @@ if (args.Length == 0)
 }
 
 string inputFilePath = args[0];
+Console.WriteLine($"Processing file: {inputFilePath}"); // Log which file is being processed
 
 // Check if the input file exists
 if (!File.Exists(inputFilePath))
@@ -34,23 +39,15 @@ try
     CommonTokenStream commonTokenStream = new CommonTokenStream(lexer);
     EesParser parser = new EesParser(commonTokenStream);
 
-    // Remove default console error listener and add a standard one
-    // This prevents ANTLR errors from polluting stdout but still shows them on stderr
+    // Remove default error listeners
     parser.RemoveErrorListeners();
-    lexer.RemoveErrorListeners(); // Also remove from lexer
-    parser.AddErrorListener(ConsoleErrorListener<IToken>.Instance);
-    lexer.AddErrorListener(ConsoleErrorListener<int>.Instance); // Lexer uses <int>
+    lexer.RemoveErrorListeners();
+
+    // Add custom error listener to parser only (to simplify)
+    parser.AddErrorListener(new CustomErrorListener());
 
     Console.WriteLine("--- Attempting to parse file content ---");
     EesParser.EesFileContext parseTreeContext = parser.eesFile(); // Get the parse tree
-
-    // Check for syntax errors reported by ANTLR
-    if (parser.NumberOfSyntaxErrors > 0)
-    {
-        Console.Error.WriteLine($"--- Parsing FAILED with {parser.NumberOfSyntaxErrors} syntax errors ---");
-        // Error details should have been printed to stderr by ConsoleErrorListener
-        return 1; // Indicate parsing failure
-    }
     Console.WriteLine("--- Parsing SUCCESSFUL (Basic syntax check passed) ---");
 
     // 2. Build Abstract Syntax Tree (AST)
@@ -58,67 +55,92 @@ try
     var astBuilder = new AstBuilderVisitor();
     AstNode rootAstNode = astBuilder.VisitEesFile(parseTreeContext); // Visit the parse tree root
 
-    if (rootAstNode is not EesFileNode fileNode) // Use pattern matching
+    if (rootAstNode is not EesFileNode fileNode)
     {
         Console.Error.WriteLine("--- AST Building FAILED: Root node is not the expected EesFileNode type ---");
         return 1; // Indicate AST building failure
     }
     Console.WriteLine($"--- AST Built Successfully ({fileNode.Statements.Count} statements found) ---");
-
-    // Optional: Print the constructed AST structure for debugging
-    Console.WriteLine("--- Constructed AST ---");
-    Console.WriteLine(rootAstNode.ToString());
-    Console.WriteLine("-----------------------");
+    Console.WriteLine("--- Constructed AST ---\n" + rootAstNode.ToString() + "\n-----------------------"); // Optional debug
 
     // 3. Execute Statements (Assignments) and Collect Equations
     Console.WriteLine("--- Initializing Execution ---");
     var variableStore = new VariableStore();
     var executor = new StatementExecutor(variableStore);
 
-    executor.Execute(fileNode); // Execute assignments, collect equations
+    executor.Execute(fileNode); // Pass 1 (Assignments), Pass 2 (Collect Equations)
 
-    // Print the state of variables after initial assignments
+    Console.WriteLine("\n--- Variable Store State After Assignments ---");
     variableStore.PrintVariables();
 
-    // 4. Solve Equations (Placeholder for now)
-    Console.WriteLine("--- Equation Solving Phase ---");
-    if (executor.Equations.Count > 0)
-    {
-        Console.WriteLine($"Found {executor.Equations.Count} equations to solve:");
-        foreach (var eq in executor.Equations)
-        {
-            Console.WriteLine($"- {eq}");
-        }
 
-        bool success = executor.SolveEquations();
-        if (success)
-        {
-            Console.WriteLine("--- Solver Phase Completed ---");
-        }
-        else
-        {
-            Console.Error.WriteLine("--- Solver FAILED ---");
-            return 1; // Indicate solver failure
-        }
+    // 4. Solve Equations
+    Console.WriteLine("\n--- Equation Solving Phase ---");
+    bool solveSuccess = executor.SolveEquations(); // Call the solver
+
+    if (solveSuccess)
+    {
+        Console.WriteLine("\n--- Solver Phase Completed Successfully ---");
+        Console.WriteLine("\n--- Final Variable Store State ---");
+        variableStore.PrintVariables(); // Print final solved values
+        exitCode = 0; // Success
     }
     else
     {
-        Console.WriteLine("No equations found to solve.");
+        Console.Error.WriteLine("\n--- Solver FAILED ---");
+        Console.WriteLine("\n--- Variable Store State After Failed Solve Attempt ---");
+        variableStore.PrintVariables(); // Print state after failure
+        exitCode = 1; // Indicate solver failure
     }
     Console.WriteLine("------------------------------------");
 
-    return 0; // Indicate overall success for this phase
+}
+catch (ParsingException pEx) // Catch specific parsing errors from our error listener
+{
+    Console.Error.WriteLine($"\n--- PARSING FAILED ---");
+    Console.Error.WriteLine(pEx.Message);
+    exitCode = 1;
 }
 catch (IOException ioEx)
 {
+    Console.Error.WriteLine($"\n--- FILE ERROR ---");
     Console.Error.WriteLine($"File access error: {ioEx.Message}");
-    return 1; // Indicate file error
+    exitCode = 1;
+}
+catch (NotImplementedException niEx)
+{
+    Console.Error.WriteLine($"\n--- EXECUTION ERROR ---");
+    Console.Error.WriteLine($"Feature not implemented: {niEx.Message}");
+    Console.Error.WriteLine(niEx.StackTrace);
+    exitCode = 1;
 }
 catch (Exception ex)
 {
-    // Catch any other exceptions during parsing or execution
+    Console.Error.WriteLine($"\n--- UNEXPECTED ERROR ---");
     Console.Error.WriteLine($"An unexpected error occurred: {ex.GetType().Name} - {ex.Message}");
     Console.Error.WriteLine("Stack Trace:");
     Console.Error.WriteLine(ex.StackTrace);
-    return 1; // Indicate general error
+    exitCode = 1;
+}
+
+Console.WriteLine($"\nExiting with code {exitCode}");
+return exitCode;
+
+
+// --- Custom Error Listener ---
+// Much simpler approach - just one listener attached to the parser
+
+public class CustomErrorListener : IAntlrErrorListener<IToken>
+{
+    public void SyntaxError(TextWriter output, IRecognizer recognizer, IToken offendingSymbol, int line, int charPositionInLine, string msg, RecognitionException e)
+    {
+        throw new ParsingException($"Syntax error at line {line}:{charPositionInLine} - {msg}", e);
+    }
+}
+
+// Custom exception for parsing errors
+public class ParsingException : Exception
+{
+    public ParsingException(string message, Exception innerException) : base(message, innerException) { }
+    public ParsingException(string message) : base(message) { }
 }

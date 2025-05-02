@@ -2,6 +2,7 @@
 using LibreSolvE.Core.Ast;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace LibreSolvE.Core.Evaluation;
 
@@ -9,147 +10,130 @@ public class StatementExecutor
 {
     private readonly VariableStore _variableStore;
     private readonly ExpressionEvaluatorVisitor _expressionEvaluator;
-    // We will store equations separately for the solver later
-    public List<EquationNode> Equations { get; } = new List<EquationNode>();
-
-    // Track variables that need solving
-    public HashSet<string> VariablesToSolve { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    public List<EquationNode> EquationsToSolve { get; } = new List<EquationNode>(); // Renamed
 
     public StatementExecutor(VariableStore variableStore)
     {
         _variableStore = variableStore ?? throw new ArgumentNullException(nameof(variableStore));
-        _expressionEvaluator = new ExpressionEvaluatorVisitor(_variableStore);
+        // WarningsAsErrors = false: Allow undefined vars during initial scan/assignment execution
+        _expressionEvaluator = new ExpressionEvaluatorVisitor(_variableStore, false);
+    }
+
+    // Helper to check if an expression can be evaluated to a constant *now*
+    private bool IsConstantValue(ExpressionNode node, out double value)
+    {
+        value = 0;
+        try
+        {
+            _expressionEvaluator.ResetUndefinedVariableCount();
+            value = _expressionEvaluator.Evaluate(node);
+            // It's constant if evaluation succeeded AND no undefined variables were hit
+            return _expressionEvaluator.GetUndefinedVariableCount() == 0;
+        }
+        catch
+        {
+            return false; // Evaluation failed (e.g., div by zero) or feature not implemented
+        }
     }
 
     public void Execute(EesFileNode fileNode)
     {
-        Console.WriteLine("--- Executing Statements ---");
-        // First pass: Process all assignments to set variable values
+        Console.WriteLine("--- Pre-processing Statements ---");
+        EquationsToSolve.Clear();
+        var potentialAssignments = new List<EquationNode>();
+        var otherEquations = new List<EquationNode>();
+
+        // Separate potential assignments (Var = ConstExpr) from other equations
         foreach (var statement in fileNode.Statements)
         {
-            if (statement is AssignmentNode assignNode)
+            if (statement is AssignmentNode explicitAssign) // Handle := assignments directly
             {
-                ExecuteAssignment(assignNode);
+                Console.WriteLine($"Debug: Found explicit assignment: {explicitAssign.Variable.Name}");
+                ExecuteExplicitAssignment(explicitAssign); // Execute immediately
             }
             else if (statement is EquationNode eqNode)
             {
-                // Collect equations for later processing
-                Console.WriteLine($"Debug: Found equation: {eqNode}");
-                Equations.Add(eqNode);
+                // Check if it's of the form Var = ConstantValue
+                if (eqNode.LeftHandSide is VariableNode varNode && IsConstantValue(eqNode.RightHandSide, out _))
+                {
+                    Console.WriteLine($"Debug: Found potential assignment equation: {eqNode}");
+                    potentialAssignments.Add(eqNode);
+                }
+                // Check if it's ConstantValue = Var (less common but possible)
+                else if (eqNode.RightHandSide is VariableNode varNodeRhs && IsConstantValue(eqNode.LeftHandSide, out _))
+                {
+                    Console.WriteLine($"Debug: Found potential assignment equation (reversed): {eqNode}");
+                    // Treat as assignment Var = Const for processing
+                    potentialAssignments.Add(new EquationNode(varNodeRhs, eqNode.LeftHandSide));
+                }
+                else
+                {
+                    Console.WriteLine($"Debug: Found potential equation to solve: {eqNode}");
+                    otherEquations.Add(eqNode); // Likely needs solving
+                }
+            }
+            else
+            {
+                Console.WriteLine($"Warning: Skipping unknown statement type: {statement.GetType().Name}");
             }
         }
-        Console.WriteLine("--- Statement Execution Finished ---");
-        // Store equations for later processing
-        Console.WriteLine($"--- Found {Equations.Count} equations for solver ---");
+
+        // Execute potential assignments (Var = ConstExpr)
+        Console.WriteLine("--- Processing Potential Assignments ---");
+        foreach (var eqNode in potentialAssignments)
+        {
+            // We already know RHS is constant, LHS is VariableNode from checks above
+            var variableNode = (VariableNode)eqNode.LeftHandSide;
+            if (IsConstantValue(eqNode.RightHandSide, out double value)) // Re-evaluate to get value
+            {
+                Console.WriteLine($"Assigning {variableNode.Name} = {value} (from equation)");
+                _variableStore.SetVariable(variableNode.Name, value);
+            }
+            else
+            {
+                // Should not happen based on initial check, but handle defensively
+                Console.WriteLine($"Warning: Could not evaluate RHS for potential assignment: {eqNode}. Treating as equation.");
+                otherEquations.Add(eqNode);
+            }
+        }
+
+        // Remaining equations are those that need the solver
+        EquationsToSolve.AddRange(otherEquations);
+
+        Console.WriteLine("--- Statement Processing Finished ---");
+        Console.WriteLine($"--- Collected {EquationsToSolve.Count} equations for solver ---");
     }
 
-    private void ExecuteAssignment(AssignmentNode assignNode)
+    // Executes explicit := assignments
+    private void ExecuteExplicitAssignment(AssignmentNode assignNode)
     {
         try
         {
+            _expressionEvaluator.ResetUndefinedVariableCount();
             double value = _expressionEvaluator.Evaluate(assignNode.RightHandSide);
-            Console.WriteLine($"Debug: Assigning {assignNode.Variable.Name} = {value}");
+            Console.WriteLine($"Assigning {assignNode.Variable.Name} := {value} (explicit)");
             _variableStore.SetVariable(assignNode.Variable.Name, value);
         }
         catch (Exception ex)
         {
-            // Improve error reporting later (e.g., add line numbers)
-            Console.WriteLine($"Error evaluating assignment for '{assignNode.Variable.Name}': {ex.Message}");
-            // Let's continue with execution rather than throwing
-            Console.WriteLine("Continuing execution...");
+            Console.WriteLine($"Error evaluating explicit assignment for '{assignNode.Variable.Name}': {ex.Message}");
+            // Decide whether to halt
         }
     }
 
-    // Placeholder for equation solving functionality
+
     public bool SolveEquations()
     {
-        // Analyze the equations and variables
-        AnalyzeSystem();
-
-        if (Equations.Count == 0)
+        if (EquationsToSolve.Count == 0)
         {
-            Console.WriteLine("No equations to solve.");
+            Console.WriteLine("No equations identified for solver.");
             return true;
         }
 
-        Console.WriteLine($"--- Solving {Equations.Count} equations ---");
-        Console.WriteLine("(Placeholder: Equation solving not yet implemented)");
+        // Pass only the equations that need solving
+        var solver = new EquationSolver(_variableStore, EquationsToSolve);
+        bool success = solver.Solve();
 
-        // TODO: Implement actual equation solving
-        // For now, just return success
-        return true;
-    }
-
-    // Analyze the equation system
-    private void AnalyzeSystem()
-    {
-        // Find all variables that appear in the equations
-        var varsInEquations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        // Identify known and unknown variables in each equation
-        Console.WriteLine("\nEquation Analysis:");
-
-        if (Equations.Count == 0)
-        {
-            Console.WriteLine("  No equations found to analyze.");
-            return;
-        }
-
-        foreach (var eq in Equations)
-        {
-            Console.WriteLine($"\n  Equation: {eq}");
-
-            // Count implicitly created variables in this equation
-            _expressionEvaluator.ResetUndefinedVariableCount();
-            try
-            {
-                // Evaluate LHS
-                _expressionEvaluator.Evaluate(eq.LeftHandSide);
-                // Evaluate RHS
-                _expressionEvaluator.Evaluate(eq.RightHandSide);
-
-                int unknownVarCount = _expressionEvaluator.GetUndefinedVariableCount();
-
-                if (unknownVarCount == 0)
-                {
-                    Console.WriteLine("    Status: All variables have values - can check if satisfied");
-                }
-                else if (unknownVarCount == 1)
-                {
-                    Console.WriteLine("    Status: One unknown variable - can solve directly");
-                }
-                else
-                {
-                    Console.WriteLine($"    Status: {unknownVarCount} unknown variables - need solver");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"    Error analyzing equation: {ex.Message}");
-            }
-        }
-
-        // Print the variables that need solving (implicitly created)
-        var implicitVars = _variableStore.GetImplicitVariableNames();
-        Console.WriteLine("\nVariables to solve for:");
-        foreach (var varName in implicitVars)
-        {
-            Console.WriteLine($"  {varName}");
-        }
-
-        // Check if we have enough equations
-        Console.WriteLine($"\nSystem has {Equations.Count} equations and {implicitVars.Count()} unknown variables");
-        if (Equations.Count < implicitVars.Count())
-        {
-            Console.WriteLine("  WARNING: Underconstrained system - may have multiple solutions");
-        }
-        else if (Equations.Count > implicitVars.Count())
-        {
-            Console.WriteLine("  WARNING: Overconstrained system - may have no solution");
-        }
-        else
-        {
-            Console.WriteLine("  System has the same number of equations as unknowns");
-        }
+        return success;
     }
 }

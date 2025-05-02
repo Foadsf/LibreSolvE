@@ -14,15 +14,20 @@ statement
     : assignment            # AssignmentStatement
     | equation              # EquationStatement
   //| functionDefinition    # FuncDefStatement    // Add later
-  //| procedureDefinition # ProcDefStatement  // Add later
-  //| moduleDefinition    # ModuleDefStatement// Add later
-  //| directive             # DirectiveStatement// Add later
-  //| callStatement         # CallStatement     // Add later
+  //| procedureDefinition   # ProcDefStatement    // Add later
+  //| moduleDefinition      # ModuleDefStatement  // Add later
+  //| directive             # DirectiveStatement  // Add later
+  //| callStatement         # CallStatement       // Add later
     ;
 
-// Rules for equation and assignment remain the same
+// Equation uses = operator for equality
 equation : lhs=expression EQ rhs=expression SEMI? ;
-assignment : variable=ID EQ rhs=expression SEMI? ;
+
+// Assignment can use either := (preferred) or = (for compatibility)
+assignment
+    : variable=ID ASSIGN rhs=expression SEMI?   # ExplicitAssignment
+    | variable=ID EQ rhs=expression SEMI?       # ImplicitAssignment
+    ;
 
 // --- Expressions (Start simple, build precedence) ---
 // Basic arithmetic - add more levels for precedence later

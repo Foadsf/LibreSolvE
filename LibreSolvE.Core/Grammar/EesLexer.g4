@@ -14,7 +14,8 @@ MINUS   : '-';
 MUL     : '*';
 DIV     : '/';
 POW     : '^' | '**'; // Allow both ^ and ** for power
-EQ      : '=';
+EQ      : '=';        // Equation operator
+ASSIGN  : ':=';       // Assignment operator
 LPAREN  : '(';
 RPAREN  : ')';
 LBRACK  : '[';
