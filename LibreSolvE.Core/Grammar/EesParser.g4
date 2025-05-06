@@ -14,6 +14,7 @@ statement
     : assignment            # AssignmentStatement
     | equation              # EquationStatement
     | DIRECTIVE             # DirectiveStatement
+    | PLOT_CMD              # PlotStatement
   //| functionDefinition    # FuncDefStatement    // Add later
   //| procedureDefinition   # ProcDefStatement    // Add later
   //| moduleDefinition      # ModuleDefStatement  // Add later

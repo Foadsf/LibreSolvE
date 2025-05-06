@@ -1,0 +1,90 @@
+<Window xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:LibreSolvE.GUI.ViewModels"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:views="clr-namespace:LibreSolvE.GUI.Views"
+    mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+    x:Class="LibreSolvE.GUI.Views.MainWindow"
+    x:DataType="vm:MainWindowViewModel"
+    Icon="/Assets/avalonia-logo.ico"
+    Title="LibreSolvE">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel />
+    </Design.DataContext>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Menu -->
+        <Menu Grid.Row="0">
+            <MenuItem Header="_File">
+                <MenuItem Header="_Open" Command="{Binding OpenCommand}" />
+                <MenuItem Header="_Save" Command="{Binding SaveCommand}" />
+                <Separator />
+                <MenuItem Header="_Exit" Command="{Binding ExitCommand}" />
+            </MenuItem>
+            <MenuItem Header="_Run">
+                <MenuItem Header="_Execute" Command="{Binding RunCommand}" />
+            </MenuItem>
+        </Menu>
+
+        <!-- Main content -->
+        <SplitView Grid.Row="1" IsPaneOpen="True" DisplayMode="Inline" OpenPaneLength="300">
+            <!-- File editor panel -->
+            <SplitView.Pane>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Text="Editor" Margin="5" FontWeight="Bold" />
+                    <TextBox Grid.Row="1" Text="{Binding FileContent}" AcceptsReturn="True"
+                        TextWrapping="Wrap" />
+                </Grid>
+            </SplitView.Pane>
+
+            <!-- Results panel -->
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Output text -->
+                <Grid Grid.Row="0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Text="Output" Margin="5" FontWeight="Bold" />
+                    <TextBox Grid.Row="1" Text="{Binding OutputText}" IsReadOnly="True"
+                        AcceptsReturn="True" TextWrapping="Wrap" />
+                </Grid>
+
+                <!-- Plot view -->
+                <Grid Grid.Row="1">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Text="Plot" Margin="5" FontWeight="Bold" />
+                    <views:PlotView Grid.Row="1" x:Name="PlotView" />
+                </Grid>
+            </Grid>
+        </SplitView>
+
+        <!-- Status bar -->
+        <Grid Grid.Row="2" Background="#F0F0F0">
+            <TextBlock Text="{Binding StatusText}" Margin="5" />
+        </Grid>
+    </Grid>
+</Window>

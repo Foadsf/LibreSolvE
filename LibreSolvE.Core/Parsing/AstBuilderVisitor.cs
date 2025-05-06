@@ -276,4 +276,13 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
             BinaryOperator.Subtract,
             operand);
     }
+
+    /// <summary>
+    /// Visits a plot statement and creates a PlotCommandNode
+    /// </summary>
+    public override AstNode VisitPlotStatement([NotNull] EesParser.PlotStatementContext context)
+    {
+        string plotCommand = context.PLOT_CMD().GetText();
+        return new PlotCommandNode(plotCommand);
+    }
 }

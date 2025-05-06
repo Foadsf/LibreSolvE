@@ -48,6 +48,9 @@ COMMENT_SLASH : '//' ~[\r\n]* -> channel(HIDDEN);
 // --- Whitespace ---
 WS      : [ \t\r\n]+ -> channel(HIDDEN); // Match one or more whitespace characters
 
+// token for plot commands
+PLOT_CMD : 'PLOT' (~[\r\n])* ;
+
 // --- Fragments (Helper rules, not tokens themselves) ---
 fragment INT   : [0-9]+ ;
 fragment FLOAT : INT '.' INT? EXP? | '.' INT EXP? | INT EXP ; // Handle various float formats

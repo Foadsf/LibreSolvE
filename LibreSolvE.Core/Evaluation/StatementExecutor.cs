@@ -1,5 +1,6 @@
 // LibreSolvE.Core/Evaluation/StatementExecutor.cs
 using LibreSolvE.Core.Ast;
+using LibreSolvE.Core.Plotting;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -26,6 +27,15 @@ public class StatementExecutor
     private string _integralTableVarName = string.Empty;
     private double _integralTableStepSize = 0.0;
     private List<string> _integralTableColumns = new List<string>();
+
+
+    private readonly PlottingService _plottingService = new PlottingService();
+
+    public event EventHandler<PlotData> PlotCreated
+    {
+        add { _plottingService.PlotCreated += value; }
+        remove { _plottingService.PlotCreated -= value; }
+    }
 
 
     // Updated constructor
@@ -62,6 +72,7 @@ public class StatementExecutor
         var potentialAssignments = new List<EquationNode>();
         var otherEquations = new List<EquationNode>();
         var directives = new List<DirectiveNode>();
+        var plotCommands = new List<PlotCommandNode>();
 
         // First pass: collect directives
         foreach (var statement in fileNode.Statements)
@@ -70,6 +81,10 @@ public class StatementExecutor
             {
                 directives.Add(directive);
                 ProcessDirective(directive);
+            }
+            else if (statement is PlotCommandNode plotCmd)
+            {
+                plotCommands.Add(plotCmd);
             }
         }
 
@@ -124,11 +139,17 @@ public class StatementExecutor
             }
         }
 
+        foreach (var plotCmd in plotCommands)
+        {
+            ProcessPlotCommand(plotCmd);
+        }
+
         // Remaining equations are those that need the solver
         EquationsToSolve.AddRange(otherEquations);
 
         Console.WriteLine("--- Statement Processing Finished ---");
         Console.WriteLine($"--- Collected {EquationsToSolve.Count} equations for solver ---");
+
     }
 
     /// <summary>
@@ -414,6 +435,33 @@ public class StatementExecutor
             _maxSteps,
             _reduceThreshold,
             _increaseThreshold);
+    }
+
+    // method to process PLOT commands
+    private void ProcessPlotCommand(PlotCommandNode plotCmd)
+    {
+        try
+        {
+            // Skip if we don't have any integral table data
+            if (_integralTable.Count == 0)
+            {
+                Console.WriteLine("Warning: No integral table data available for plotting.");
+                return;
+            }
+
+            // Create the plot
+            var plotData = _plottingService.CreatePlot(plotCmd.CommandText, _integralTable);
+
+            // Save to SVG file
+            string fileName = $"plot_{DateTime.Now:yyyyMMdd_HHmmss}.svg";
+            _plottingService.SaveToSvg(plotData, fileName);
+
+            Console.WriteLine($"Plot saved to {fileName}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error processing plot command: {ex.Message}");
+        }
     }
 
 
