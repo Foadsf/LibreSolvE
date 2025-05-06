@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Linq;
 using System.Windows.Input;
 using Avalonia.Controls;
+using Avalonia.Platform.Storage;
 using LibreSolvE.Core.Plotting;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -21,6 +22,7 @@ namespace LibreSolvE.GUI.ViewModels
         private string _filePath = "";
         private string _statusText = "Ready";
         private PlotData? _currentPlot;
+        private Window? _window;
 
         public string FileContent
         {
@@ -59,52 +61,111 @@ namespace LibreSolvE.GUI.ViewModels
             ExitCommand = new RelayCommand(() => Environment.Exit(0));
         }
 
+        // Set the window reference (should be called after initialization)
+        public void SetWindow(Window window)
+        {
+            _window = window;
+        }
+
         private async Task OpenFile()
         {
-            var dialog = new OpenFileDialog
+            if (_window == null)
             {
-                Title = "Open LSE File",
-                Filters = new List<FileDialogFilter>
-                {
-                    new FileDialogFilter { Name = "LSE Files", Extensions = new List<string> { "lse" } },
-                    new FileDialogFilter { Name = "All Files", Extensions = new List<string> { "*" } }
-                }
+                StatusText = "Error: Window reference not set";
+                return;
+            }
+
+            // Get the storage provider
+            var storageProvider = _window.StorageProvider;
+
+            // Set up file types filter
+            var lseFileType = new FilePickerFileType("LSE Files")
+            {
+                Patterns = new[] { "*.lse" },
+                MimeTypes = new[] { "application/octet-stream" }
             };
 
-            var result = await dialog.ShowAsync(new Window());
-            if (result != null && result.Length > 0)
+            var allFileType = new FilePickerFileType("All Files")
             {
-                _filePath = result[0];
-                FileContent = File.ReadAllText(_filePath);
+                Patterns = new[] { "*" }
+            };
+
+            // Create file picker options
+            var options = new FilePickerOpenOptions
+            {
+                Title = "Open LSE File",
+                AllowMultiple = false,
+                FileTypeFilter = new[] { lseFileType, allFileType }
+            };
+
+            // Show the file picker
+            var result = await storageProvider.OpenFilePickerAsync(options);
+
+            // Check if a file was selected
+            if (result != null && result.Count > 0)
+            {
+                var file = result[0];
+                _filePath = file.Path.LocalPath;
+
+                // Read the file content
+                using var stream = await file.OpenReadAsync();
+                using var reader = new StreamReader(stream);
+                FileContent = await reader.ReadToEndAsync();
+
                 StatusText = $"Opened: {_filePath}";
             }
         }
 
         private async Task SaveFile()
         {
+            if (_window == null)
+            {
+                StatusText = "Error: Window reference not set";
+                return;
+            }
+
+            // Get the storage provider
+            var storageProvider = _window.StorageProvider;
+
+            // If no file path is set, show save as dialog
             if (string.IsNullOrEmpty(_filePath))
             {
-                var dialog = new SaveFileDialog
+                // Set up file types filter
+                var lseFileType = new FilePickerFileType("LSE Files")
                 {
-                    Title = "Save LSE File",
-                    Filters = new List<FileDialogFilter>
-                    {
-                        new FileDialogFilter { Name = "LSE Files", Extensions = new List<string> { "lse" } },
-                        new FileDialogFilter { Name = "All Files", Extensions = new List<string> { "*" } }
-                    }
+                    Patterns = new[] { "*.lse" },
+                    MimeTypes = new[] { "application/octet-stream" }
                 };
 
-                var result = await dialog.ShowAsync(new Window());
-                if (!string.IsNullOrEmpty(result))
+                var allFileType = new FilePickerFileType("All Files")
                 {
-                    _filePath = result;
+                    Patterns = new[] { "*" }
+                };
+
+                // Create file picker options
+                var options = new FilePickerSaveOptions
+                {
+                    Title = "Save LSE File",
+                    SuggestedFileName = Path.GetFileName(_filePath) ?? "untitled.lse",
+                    DefaultExtension = ".lse",
+                    FileTypeChoices = new[] { lseFileType, allFileType }
+                };
+
+                // Show the file picker
+                var result = await storageProvider.SaveFilePickerAsync(options);
+
+                // Check if a file was selected
+                if (result != null)
+                {
+                    _filePath = result.Path.LocalPath;
                 }
                 else
                 {
-                    return;
+                    return; // User canceled
                 }
             }
 
+            // Write content to file
             File.WriteAllText(_filePath, FileContent);
             StatusText = $"Saved: {_filePath}";
         }
