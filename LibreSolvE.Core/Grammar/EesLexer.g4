@@ -31,6 +31,9 @@ STRING_LITERAL: '\'' ( '\'\'' | ~['] )* '\'' ; // String literals with single qu
 // --- Identifiers ---
 ID      : [a-zA-Z] [a-zA-Z0-9_]* ('$' | LBRACK)? ; // Basic ID, allows $ or [ at end (for strings/arrays later)
 
+// Directives
+DIRECTIVE : '$' [a-zA-Z]+ (~[\r\n])* ;
+
 // --- Comments ---
 // EES curly brace comments { ... } - can be nested, but ANTLR simple version doesn't handle nesting easily without modes
 // Let's start with non-nested for simplicity

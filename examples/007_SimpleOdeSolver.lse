@@ -1,0 +1,16 @@
+{ Simple ODE Example - dy/dt + 4*t*y = -2*t }
+{ with initial condition y = 0 at t = 0 }
+
+$IntegralAutoStep Vary=1 Min=5 Max=2000 Reduce=1e-1 Increase=1e-3
+
+// Define the state equation
+dydt + 4*t*y = -2*t  // State equation in standard form
+
+// Run the simulation
+t_sim := 2.5  // Simulation time
+y = Integral(dydt, t, 0, t_sim)  // Solve the ODE
+
+// Analytical solution for comparison
+y_analytical := -1/2 + exp(-2*t^2)/2
+
+$IntegralTable t, y, y_analytical

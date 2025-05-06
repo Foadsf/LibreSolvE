@@ -17,13 +17,28 @@ public class ExpressionEvaluatorVisitor
     private bool _warningsAsErrors = false;
     private int _undefinedVariableCount = 0;
 
+    private readonly StatementExecutor _statementExecutor;
+
     // Unit Parser instance - Use the static methods from UnitParser class
     // No need for _unitCache field here anymore
 
+    // LibreSolvE.Core/Evaluation/ExpressionEvaluatorVisitor.cs
+
+    // original constructor
     public ExpressionEvaluatorVisitor(VariableStore variableStore, FunctionRegistry functionRegistry, bool warningsAsErrors = false)
     {
         _variableStore = variableStore ?? throw new ArgumentNullException(nameof(variableStore));
         _functionRegistry = functionRegistry ?? throw new ArgumentNullException(nameof(functionRegistry));
+        _warningsAsErrors = warningsAsErrors;
+        _statementExecutor = null; // No statement executor in this case
+    }
+
+    // constructor overload
+    public ExpressionEvaluatorVisitor(VariableStore variableStore, FunctionRegistry functionRegistry, StatementExecutor statementExecutor, bool warningsAsErrors = false)
+    {
+        _variableStore = variableStore ?? throw new ArgumentNullException(nameof(variableStore));
+        _functionRegistry = functionRegistry ?? throw new ArgumentNullException(nameof(functionRegistry));
+        _statementExecutor = statementExecutor ?? throw new ArgumentNullException(nameof(statementExecutor));
         _warningsAsErrors = warningsAsErrors;
     }
 
@@ -152,6 +167,133 @@ public class ExpressionEvaluatorVisitor
                 throw new InvalidOperationException($"Error during CONVERTTEMP from '{fromUnitStr}' to '{toUnitStr}' for value {valueToConvert}. Details: {ex.Message}", ex);
             }
 
+        }
+        // --- Special Handling for INTEGRAL ---
+        else if (string.Equals(funcCall.FunctionName, "INTEGRAL", StringComparison.OrdinalIgnoreCase))
+        {
+            if (funcCall.Arguments.Count < 3 || funcCall.Arguments.Count > 5)
+            {
+                throw new ArgumentException($"Function '{funcCall.FunctionName}' requires 3-5 arguments (Integrand, VarName, LowerLimit, UpperLimit, [StepSize])");
+            }
+
+            // Get the integrand variable name (should be a variable node)
+            string integrandVarName;
+            if (funcCall.Arguments[0] is VariableNode integrandVarNode)
+            {
+                integrandVarName = integrandVarNode.Name;
+            }
+            else
+            {
+                throw new ArgumentException($"First argument for '{funcCall.FunctionName}' must be a variable name");
+            }
+
+            // Get independent variable name (should be a variable node)
+            string independentVarName;
+            if (funcCall.Arguments[1] is VariableNode independentVarNode)
+            {
+                independentVarName = independentVarNode.Name;
+            }
+            else
+            {
+                throw new ArgumentException($"Second argument for '{funcCall.FunctionName}' must be a variable name");
+            }
+
+            // Evaluate lower limit
+            double lowerLimit = Evaluate(funcCall.Arguments[2]);
+
+            // Evaluate upper limit
+            double upperLimit = Evaluate(funcCall.Arguments[3]);
+
+            // Get optional step size (if provided)
+            double stepSize = 0.0; // Default to adaptive step size
+            if (funcCall.Arguments.Count >= 5)
+            {
+                stepSize = Evaluate(funcCall.Arguments[4]);
+            }
+
+            // Create and configure ODE solver
+            var odeSolver = new OdeSolver(
+                _variableStore,
+                _functionRegistry,
+                integrandVarName,
+                independentVarName,
+                lowerLimit,
+                upperLimit,
+                stepSize);
+
+            // Solve the ODE
+            return odeSolver.Solve();
+        }
+        // --- Special Handling for INTEGRAL ---
+        else if (string.Equals(funcCall.FunctionName, "INTEGRAL", StringComparison.OrdinalIgnoreCase))
+        {
+            if (funcCall.Arguments.Count < 3 || funcCall.Arguments.Count > 5)
+            {
+                throw new ArgumentException($"Function '{funcCall.FunctionName}' requires 3-5 arguments (Integrand, VarName, LowerLimit, UpperLimit, [StepSize])");
+            }
+
+            // Get the integrand variable name (should be a variable node)
+            string integrandVarName;
+            if (funcCall.Arguments[0] is VariableNode integrandVarNode)
+            {
+                integrandVarName = integrandVarNode.Name;
+            }
+            else
+            {
+                throw new ArgumentException($"First argument for '{funcCall.FunctionName}' must be a variable name");
+            }
+
+            // Get independent variable name (should be a variable node)
+            string independentVarName;
+            if (funcCall.Arguments[1] is VariableNode independentVarNode)
+            {
+                independentVarName = independentVarNode.Name;
+            }
+            else
+            {
+                throw new ArgumentException($"Second argument for '{funcCall.FunctionName}' must be a variable name");
+            }
+
+            // Evaluate lower limit
+            double lowerLimit = Evaluate(funcCall.Arguments[2]);
+
+            // Evaluate upper limit
+            double upperLimit = Evaluate(funcCall.Arguments[3]);
+
+            // Get optional step size (if provided)
+            double stepSize = 0.0; // Default to adaptive step size
+            if (funcCall.Arguments.Count >= 5)
+            {
+                stepSize = Evaluate(funcCall.Arguments[4]);
+            }
+
+            // Create and configure ODE solver
+            var odeSolver = new OdeSolver(
+                _variableStore,
+                _functionRegistry,
+                integrandVarName,
+                independentVarName,
+                lowerLimit,
+                upperLimit,
+                stepSize);
+
+            // If we have a StatementExecutor reference, configure the solver with adaptive settings
+            if (_statementExecutor != null)
+            {
+                _statementExecutor.ConfigureOdeSolver(odeSolver);
+            }
+
+            // Solve the ODE
+            double result = odeSolver.Solve();
+
+            // If we have a StatementExecutor reference, update the integral table
+            if (_statementExecutor != null)
+            {
+                var results = odeSolver.GetResults();
+                _statementExecutor.UpdateIntegralTable(independentVarName, integrandVarName, results.Times, results.Values);
+            }
+
+            return result;
         }
         // --- Handle Regular Mathematical/Other Functions ---
         else

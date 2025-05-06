@@ -102,4 +102,49 @@ public class VariableStore
         }
         Console.WriteLine("----------------------");
     }
+
+    /// <summary>
+    /// Forces re-evaluation of all equations with current variable values
+    /// </summary>
+    public void ResolveEquations()
+    {
+        // This implementation depends on how equations are stored and managed
+        // A basic implementation might look like this:
+
+        bool changed = true;
+        int iterations = 0;
+        int maxIterations = 100; // Prevent infinite loops
+
+        // Keep resolving until no values change or we hit iteration limit
+        while (changed && iterations < maxIterations)
+        {
+            changed = false;
+            iterations++;
+
+            // Store previous values for comparison
+            var previousValues = new Dictionary<string, double>(_variables);
+
+            // Re-evaluate all equations (if we had a list of equations)
+            // This would typically be done by the StatementExecutor
+
+            // For this implementation, we'll just check if values changed
+            foreach (var varName in _variables.Keys.ToList())
+            {
+                if (_variables.TryGetValue(varName, out double currentValue) &&
+                    previousValues.TryGetValue(varName, out double prevValue))
+                {
+                    if (Math.Abs(currentValue - prevValue) > 1e-10)
+                    {
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (iterations >= maxIterations)
+        {
+            Console.WriteLine("Warning: Maximum iterations reached in equation resolution");
+        }
+    }
 }

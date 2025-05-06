@@ -253,4 +253,27 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
         string literalWithQuotes = context.STRING_LITERAL().GetText();
         return new StringLiteralNode(literalWithQuotes);
     }
+
+    /// <summary>
+    /// Visit a directive statement and create a DirectiveNode
+    /// </summary>
+    public override AstNode VisitDirectiveStatement([NotNull] EesParser.DirectiveStatementContext context)
+    {
+        string directiveText = context.DIRECTIVE().GetText();
+        return new DirectiveNode(directiveText);
+    }
+
+    /// <summary>
+    /// Visits a unary minus expression.
+    /// </summary>
+    public override AstNode VisitUnaryMinusExpr([NotNull] EesParser.UnaryMinusExprContext context)
+    {
+        ExpressionNode operand = (ExpressionNode)Visit(context.expression());
+
+        // Create a binary operation with 0 - operand
+        return new BinaryOperationNode(
+            new NumberNode(0.0),
+            BinaryOperator.Subtract,
+            operand);
+    }
 }

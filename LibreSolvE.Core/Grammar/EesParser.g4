@@ -13,6 +13,7 @@ eesFile : statement* EOF;
 statement
     : assignment            # AssignmentStatement
     | equation              # EquationStatement
+    | DIRECTIVE             # DirectiveStatement
   //| functionDefinition    # FuncDefStatement    // Add later
   //| procedureDefinition   # ProcDefStatement    // Add later
   //| moduleDefinition      # ModuleDefStatement  // Add later
@@ -32,10 +33,11 @@ assignment
 // --- Expressions (Start simple, build precedence) ---
 // Basic arithmetic - add more levels for precedence later
 expression
-    : left=expression op=POW right=expression           # PowExpr       // Highest precedence
-    | left=expression op=(MUL | DIV) right=expression   # MulDivExpr    // Higher precedence
-    | left=expression op=(PLUS | MINUS) right=expression # AddSubExpr   // Lower precedence
-    | atom                                               # AtomExpr      // Base case
+    : MINUS expression                                  # UnaryMinusExpr
+    | left=expression op=POW right=expression           # PowExpr
+    | left=expression op=(MUL | DIV) right=expression   # MulDivExpr
+    | left=expression op=(PLUS | MINUS) right=expression # AddSubExpr
+    | atom                                              # AtomExpr
     ;
 
 // --- Basic Building Blocks ---

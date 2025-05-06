@@ -1,6 +1,7 @@
 ﻿// LibreSolvE.TUI/Program.cs
 using System;
 using System.IO;
+using System.Text;
 using System.Collections.Generic;
 using System.Linq;
 using Terminal.Gui;
@@ -304,7 +305,8 @@ class MainWindow : Window
             // Setup error handling
             parser.RemoveErrorListeners();
             lexer.RemoveErrorListeners();
-            var errorListener = new ThrowingErrorListener();
+            // var errorListener = new ThrowingErrorListener();
+            var errorListener = new BetterErrorListener();
             parser.AddErrorListener(errorListener);
             lexer.AddErrorListener(errorListener);
 
@@ -391,11 +393,4 @@ public class ThrowingErrorListener : Antlr4.Runtime.BaseErrorListener, Antlr4.Ru
         string errorMessage = $"Lexer error at line {line}:{charPositionInLine}: {msg}";
         throw new ParsingException(errorMessage, e);
     }
-}
-
-// Custom exception for parsing errors (same as in CLI)
-public class ParsingException : Exception
-{
-    public ParsingException(string message) : base(message) { }
-    public ParsingException(string message, Exception innerException) : base(message, innerException) { }
 }

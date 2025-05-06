@@ -1,6 +1,7 @@
 ﻿// LibreSolvE.CLI/Program.cs
 using System;
 using System.IO; // Required for file operations
+using System.Text;
 using Antlr4.Runtime; // ANTLR Runtime
 using LibreSolvE.Core.Parsing; // Your ANTLR generated parser/lexer namespace
 using LibreSolvE.Core.Ast;     // Your Abstract Syntax Tree node classes
@@ -92,7 +93,8 @@ try
     // Setup error handling
     parser.RemoveErrorListeners();
     lexer.RemoveErrorListeners();
-    var errorListener = new ThrowingErrorListener();
+    var errorListener = new BetterErrorListener();
+    // var errorListener = new ThrowingErrorListener();
     parser.AddErrorListener(errorListener);
     lexer.AddErrorListener(errorListener); // Add to lexer too
 
@@ -229,9 +231,3 @@ public class ThrowingErrorListener : BaseErrorListener, IAntlrErrorListener<int>
     }
 }
 
-// Custom exception for parsing errors (remains the same)
-public class ParsingException : Exception
-{
-    public ParsingException(string message) : base(message) { }
-    public ParsingException(string message, Exception innerException) : base(message, innerException) { }
-}

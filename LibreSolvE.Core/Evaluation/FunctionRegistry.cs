@@ -187,21 +187,25 @@ public class FunctionRegistry
         // Conditional (Basic version)
         RegisterFunction("IF", 3, 3, args => args[0] != 0 ? args[1] : args[2]); // IF(cond, true_val, false_val)
 
-        // Unit Conversion Placeholder (Requires string handling in evaluator)
+        // Unit Conversion (for string arguments)
         RegisterFunction("CONVERT", 2, 2, args =>
         {
-            // This is conceptually what needs to happen, but requires the evaluator
-            // to pass string arguments correctly. The current EvaluateFunction only takes doubles.
+            // Special handling required - the actual implementation will be in ExpressionEvaluator
             throw new NotImplementedException("CONVERT function requires string arguments - evaluator needs modification.");
-            // Example: return UnitsNet.UnitConverter.ConvertByName(1.0, stringArg1, stringArg2);
         });
 
-        // Temperature Conversion Placeholder
+        // Temperature Conversion (needs special handling)
         RegisterFunction("CONVERTTEMP", 3, 3, args =>
         {
-            // Requires evaluator to pass string arguments for the first two parameters.
+            // Special handling required
             throw new NotImplementedException("CONVERTTEMP function requires string arguments - evaluator needs modification.");
-            // Example: return UnitsNet.Temperature.From(args[2], tempUnitEnum1).ToUnit(tempUnitEnum2).Value;
+        });
+
+        // Integral function for ODE solving (needs special handling)
+        RegisterFunction("INTEGRAL", 3, 5, args =>
+        {
+            // Special handling required
+            throw new NotImplementedException("INTEGRAL function requires special handling in the evaluator.");
         });
 
         Console.WriteLine($"Debug: Finished registering {_functions.Count} built-in functions.");
