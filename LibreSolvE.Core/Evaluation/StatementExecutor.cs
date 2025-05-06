@@ -200,7 +200,7 @@ public class StatementExecutor
         // Extract variable name and step size
         int colonIndex = tableSpec.IndexOf(':');
         string varName;
-        string stepSizeStr = null;
+        string? stepSizeStr = null;
 
         if (colonIndex > 0)
         {
@@ -407,7 +407,13 @@ public class StatementExecutor
     /// </summary>
     public void ConfigureOdeSolver(OdeSolver solver)
     {
-        // Method implementation here...
+        // Use all the fields that were previously marked as unused
+        solver.ConfigureAdaptiveStepSize(
+            _varyStepSize,
+            _minSteps,
+            _maxSteps,
+            _reduceThreshold,
+            _increaseThreshold);
     }
 
 

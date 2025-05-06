@@ -17,7 +17,7 @@ public class ExpressionEvaluatorVisitor
     private bool _warningsAsErrors = false;
     private int _undefinedVariableCount = 0;
 
-    private readonly StatementExecutor _statementExecutor;
+    private readonly StatementExecutor? _statementExecutor; // Change to nullable
 
     // Unit Parser instance - Use the static methods from UnitParser class
     // No need for _unitCache field here anymore
@@ -30,7 +30,7 @@ public class ExpressionEvaluatorVisitor
         _variableStore = variableStore ?? throw new ArgumentNullException(nameof(variableStore));
         _functionRegistry = functionRegistry ?? throw new ArgumentNullException(nameof(functionRegistry));
         _warningsAsErrors = warningsAsErrors;
-        _statementExecutor = null; // No statement executor in this case
+        _statementExecutor = null; // Now valid for nullable field
     }
 
     // constructor overload
@@ -289,6 +289,7 @@ public class ExpressionEvaluatorVisitor
             // If we have a StatementExecutor reference, update the integral table
             if (_statementExecutor != null)
             {
+                // Safe to use _statementExecutor here
                 var results = odeSolver.GetResults();
                 _statementExecutor.UpdateIntegralTable(independentVarName, integrandVarName, results.Times, results.Values);
             }
