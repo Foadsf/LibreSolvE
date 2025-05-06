@@ -28,4 +28,5 @@ public class PlotData
 {
     public PlotSettings Settings { get; set; } = new PlotSettings();
     public List<PlotSeries> Series { get; set; } = new List<PlotSeries>();
+    public string FilePath { get; set; } = string.Empty;
 }

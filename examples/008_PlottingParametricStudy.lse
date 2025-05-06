@@ -1,0 +1,77 @@
+{ Example 008_OdePlotting.lse }
+"This example demonstrates plotting ODE solutions"
+
+{ Simple ODE from Appendix G: dy/dt + 4ty = -2t }
+{ with initial condition y = 0 at t = 0 }
+
+{ Set ODE solver parameters }
+$IntegralAutoStep Vary=1 Min=5 Max=2000 Reduce=1e-1 Increase=1e-3
+
+{ Variables and constants }
+pi := 3.14159265359
+
+{ Setup for ODE }
+t := 0 "[s]"          // Initial time value
+y := 0                // Initial y value
+t_final := 2.5 "[s]"  // Simulation end time
+
+{ Set up integral table for results - do this BEFORE solving }
+$IntegralTable t, y, y_analytical
+
+{ ODE state equation: dy/dt + 4ty = -2t }
+dydt + 4*t*y = -2*t
+
+{ Analytical solution for comparison }
+y_analytical = -1/2 + exp(-2*t^2)/2
+
+{ Solve the ODE }
+y = Integral(dydt, t, 0, t_final)
+
+{ Plot the results - numerical solution only }
+PLOT t, y WITH TITLE "ODE Solution" XLABEL "Time (s)" YLABEL "y(t)"
+
+{ Now let's create pendulum period data }
+{ Pendulum constants }
+g := 9.81 "[m/s^2]"   // Gravity acceleration
+
+{ Calculate pendulum period for different lengths }
+L1 := 0.5 "[m]"
+L2 := 1.0 "[m]"
+L3 := 1.5 "[m]"
+L4 := 2.0 "[m]"
+L5 := 2.5 "[m]"
+L6 := 3.0 "[m]"
+
+{ Calculate periods using T = 2π√(L/g) }
+T1 := 2 * pi * SQRT(L1 / g)
+T2 := 2 * pi * SQRT(L2 / g)
+T3 := 2 * pi * SQRT(L3 / g)
+T4 := 2 * pi * SQRT(L4 / g)
+T5 := 2 * pi * SQRT(L5 / g)
+T6 := 2 * pi * SQRT(L6 / g)
+
+{ Set up a separate integral table for the pendulum data }
+{ IMPORTANT: Create table BEFORE setting any values }
+$IntegralTable length, period
+
+{ Add the data points by setting values }
+length := L1
+period := T1
+
+length := L2
+period := T2
+
+length := L3
+period := T3
+
+length := L4
+period := T4
+
+length := L5
+period := T5
+
+length := L6
+period := T6
+
+{ Plot the pendulum length vs period }
+PLOT length, period WITH TITLE "Pendulum Period vs Length" XLABEL "Length (m)" YLABEL "Period (s)"

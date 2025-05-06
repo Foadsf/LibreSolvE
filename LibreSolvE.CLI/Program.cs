@@ -132,6 +132,30 @@ try
     Console.WriteLine("\n--- Variable Store State After Assignments ---");
     variableStore.PrintVariables();
 
+    // section to show the generated plots in a more visually appealing way
+    if (executor.HasGeneratedPlots())
+    {
+        Console.WriteLine("\n--- Plots Generated ---");
+        foreach (var plot in executor.GetGeneratedPlots())
+        {
+            Console.WriteLine($"Plot: {plot.Settings.Title}");
+            Console.WriteLine($"  X-Axis: {plot.Settings.XLabel}");
+            Console.WriteLine($"  Y-Axis: {plot.Settings.YLabel}");
+            Console.WriteLine($"  Series: {plot.Series.Count}");
+            Console.WriteLine("  Data Points:");
+            for (int i = 0; i < Math.Min(5, plot.Series[0].XValues.Count); i++)
+            {
+                var dataPoints = plot.Series.Select(s => $"{s.Name}: ({s.XValues[i]:F3}, {s.YValues[i]:F3})");
+                Console.WriteLine($"    {string.Join(", ", dataPoints)}");
+            }
+            if (plot.Series[0].XValues.Count > 5)
+            {
+                Console.WriteLine("    ... (more data points)");
+            }
+            Console.WriteLine($"  Plot saved as: {plot.FilePath}");
+        }
+    }
+
 
     // 6. Solve Equations
     Console.WriteLine("\n--- Equation Solving Phase ---");

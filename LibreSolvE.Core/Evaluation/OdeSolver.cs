@@ -1,25 +1,31 @@
 // LibreSolvE.Core/Evaluation/OdeSolver.cs
 using System;
-using System.Collections.Generic;
+using System.Collections.Generic; // Keep using System.Collections.Generic for flexibility
 using System.Linq;
+using System.Globalization;
 using LibreSolvE.Core.Ast;
 
 namespace LibreSolvE.Core.Evaluation;
 
 /// <summary>
 /// Provides functionality for solving Ordinary Differential Equations (ODEs) using various numerical methods.
+/// Relies on the StatementExecutor to record results.
 /// </summary>
 public class OdeSolver
 {
     private readonly VariableStore _variableStore;
     private readonly FunctionRegistry _functionRegistry;
     private readonly ExpressionEvaluatorVisitor _evaluator;
-    private readonly string _integrandVarName;
-    private readonly string _independentVarName;
-    private double _stepSize;
-    private double _lowerLimit;
-    private double _upperLimit;
-    private bool _useAdaptiveStepSize;
+    private readonly string _integrandVarName;     // Name of the derivative variable (e.g., "dydt")
+    private readonly string _dependentVarName;     // Name of the variable being integrated (e.g., "y")
+    private readonly string _independentVarName;   // Name of the integration variable (e.g., "t")
+    private readonly double _lowerLimit;
+    private readonly double _upperLimit;
+    private readonly double _stepSize;             // If > 0, use fixed step; otherwise adaptive
+    private readonly bool _useAdaptiveStepSize;
+
+    // *** NEW: Reference to the executor for recording results ***
+    private readonly StatementExecutor _statementExecutor;
 
     // Settings for adaptive step size algorithm
     private bool _varyStepSize = true;
@@ -28,30 +34,32 @@ public class OdeSolver
     private double _reduceThreshold = 1e-1;
     private double _increaseThreshold = 1e-3;
 
-    // Results storage
-    private readonly List<double> _timeValues = new List<double>();
-    private readonly List<double> _resultValues = new List<double>();
 
+    // *** MODIFIED CONSTRUCTOR ***
     public OdeSolver(
+        StatementExecutor statementExecutor, // Added executor parameter
         VariableStore variableStore,
         FunctionRegistry functionRegistry,
-        string integrandVarName,
-        string independentVarName,
+        string integrandVarName,     // e.g., "dydt"
+        string dependentVarName,     // e.g., "y"
+        string independentVarName,   // e.g., "t"
         double lowerLimit,
         double upperLimit,
-        double stepSize = 0.0)
+        double stepSize = 0.0)       // stepSize <= 0 means adaptive
     {
+        _statementExecutor = statementExecutor ?? throw new ArgumentNullException(nameof(statementExecutor));
         _variableStore = variableStore ?? throw new ArgumentNullException(nameof(variableStore));
         _functionRegistry = functionRegistry ?? throw new ArgumentNullException(nameof(functionRegistry));
         _integrandVarName = integrandVarName ?? throw new ArgumentNullException(nameof(integrandVarName));
+        _dependentVarName = dependentVarName ?? throw new ArgumentNullException(nameof(dependentVarName));
         _independentVarName = independentVarName ?? throw new ArgumentNullException(nameof(independentVarName));
         _lowerLimit = lowerLimit;
         _upperLimit = upperLimit;
         _stepSize = stepSize;
         _useAdaptiveStepSize = stepSize <= 0.0;
 
-        // Create evaluator for expressions
-        _evaluator = new ExpressionEvaluatorVisitor(_variableStore, _functionRegistry, false);
+        // Create evaluator for expressions - passes executor for context if needed
+        _evaluator = new ExpressionEvaluatorVisitor(_variableStore, _functionRegistry, _statementExecutor, false);
     }
 
     /// <summary>
@@ -64,6 +72,7 @@ public class OdeSolver
         _maxSteps = Math.Max(_minSteps + 1, maxSteps);
         _reduceThreshold = Math.Max(1e-10, reduceThreshold);
         _increaseThreshold = Math.Max(1e-12, Math.Min(_reduceThreshold / 10, increaseThreshold));
+        Console.WriteLine($"ODE Solver Adaptive Config: Vary={_varyStepSize}, Min={_minSteps}, Max={_maxSteps}, Reduce={_reduceThreshold}, Increase={_increaseThreshold}");
     }
 
     /// <summary>
@@ -71,200 +80,245 @@ public class OdeSolver
     /// </summary>
     public double Solve()
     {
-        // Clear previous results
-        _timeValues.Clear();
-        _resultValues.Clear();
+        // Get initial condition from the variable store at the lower limit
+        double originalIndepVarValue = _variableStore.HasVariable(_independentVarName)
+                                     ? _variableStore.GetVariable(_independentVarName)
+                                     : double.NaN;
+        _variableStore.SetVariable(_independentVarName, _lowerLimit);
 
-        // Get initial condition at lower limit
-        double initialValue = GetValueAtIndependentVar(_lowerLimit);
+        if (!_variableStore.HasVariable(_dependentVarName))
+        {
+            Console.WriteLine($"Warning: Initial condition for '{_dependentVarName}' at {_independentVarName}={_lowerLimit} not found. Assuming 0.");
+            _variableStore.SetVariable(_dependentVarName, 0.0); // Assume 0 if not set
+        }
+        double initialValue = _variableStore.GetVariable(_dependentVarName);
+        Console.WriteLine($"ODE Solver: Initial Condition: {_dependentVarName}={initialValue} at {_independentVarName}={_lowerLimit}");
 
+        // Restore original independent variable value if it existed
+        if (!double.IsNaN(originalIndepVarValue))
+        {
+            _variableStore.SetVariable(_independentVarName, originalIndepVarValue);
+        }
+
+        // *** UPDATED CALL: Record the initial state in the table ***
+        _statementExecutor.RecordIntegralStep(_lowerLimit, initialValue, _independentVarName, _dependentVarName, forceRecord: true); // Force record initial
+
+        double finalValue;
         // Use the appropriate method
         if (_useAdaptiveStepSize)
         {
-            return SolveWithAdaptiveStep(initialValue);
+            finalValue = SolveWithAdaptiveStep(initialValue);
         }
         else
         {
-            return SolveWithFixedStep(initialValue);
+            finalValue = SolveWithFixedStep(initialValue);
         }
+
+        // *** UPDATED CALL: Ensure the final state is recorded ***
+        // Check if last recorded time is different from upperLimit before adding
+        _statementExecutor.RecordIntegralStep(_upperLimit, finalValue, _independentVarName, _dependentVarName, forceRecord: true); // Force record final
+
+        return finalValue;
     }
 
+
     /// <summary>
-    /// Solve using a fixed step size (similar to Heun's method/RK2)
+    /// Solve using a fixed step size (Heun's method/RK2)
     /// </summary>
     private double SolveWithFixedStep(double initialValue)
     {
         double t = _lowerLimit;
         double y = initialValue;
-        int steps = CalculateSteps();
+        int steps = CalculateSteps(); // Calculate number of steps based on _stepSize
 
-        _timeValues.Add(t);
-        _resultValues.Add(y);
+        Console.WriteLine($"ODE Solver (Fixed Step): Steps={steps}, StepSize={_stepSize}");
 
-        double stepSize = (_upperLimit - _lowerLimit) / steps;
+
+        double stepSizeActual = (_upperLimit - _lowerLimit) / steps; // Use calculated step size
 
         // Perform integration using Heun's method (predictor-corrector)
         for (int i = 0; i < steps; i++)
         {
             // Predictor step (Euler)
             double dydt = GetSlope(t, y);
-            double yPredictor = y + dydt * stepSize;
+            double yPredictor = y + dydt * stepSizeActual;
 
             // Corrector step
-            double tNext = t + stepSize;
+            double tNext = t + stepSizeActual;
+            // Important: Use the *predicted* y value at tNext to estimate the slope there
             double dydtNext = GetSlope(tNext, yPredictor);
 
             // Final value using average of slopes
-            y = y + (dydt + dydtNext) * stepSize / 2.0;
-            t = tNext;
+            y = y + (dydt + dydtNext) * stepSizeActual / 2.0;
+            t = tNext; // Update time *after* using old t for slope calculation
 
-            _timeValues.Add(t);
-            _resultValues.Add(y);
+            // *** UPDATED CALL: Record step using executor ***
+            _statementExecutor.RecordIntegralStep(t, y, _independentVarName, _dependentVarName);
         }
 
         return y; // Return final value
     }
 
     /// <summary>
-    /// Solve using adaptive step size
+    /// Solve using adaptive step size (RK4 based, needs improvement)
     /// </summary>
     private double SolveWithAdaptiveStep(double initialValue)
     {
         double t = _lowerLimit;
         double y = initialValue;
 
-        _timeValues.Add(t);
-        _resultValues.Add(y);
+        Console.WriteLine("ODE Solver (Adaptive Step): Starting...");
 
-        // Initial step size - estimate based on range or use default
+        // Initial step size heuristic - can be improved
         double stepSize = (_upperLimit - _lowerLimit) / Math.Max(10, _minSteps);
-        int steps = 0;
+        int stepsTaken = 0;
+        const double safetyFactor = 0.9;
+        // const double minStepFactor = 0.2; // DELETE
+        // const double maxStepFactor = 5.0; // DELETE
+        double minAllowedStep = (_upperLimit - _lowerLimit) / _maxSteps / 10; // Heuristic min
+        double maxAllowedStep = (_upperLimit - _lowerLimit) / _minSteps * 10; // Heuristic max
 
-        // Continue until we reach the upper limit or exceed max steps
-        while (t < _upperLimit && steps < _maxSteps)
+
+        while (t < _upperLimit && stepsTaken < _maxSteps)
         {
             // Ensure we don't step beyond the upper limit
-            if (t + stepSize > _upperLimit)
-            {
-                stepSize = _upperLimit - t;
-            }
+            stepSize = Math.Min(stepSize, _upperLimit - t);
+            stepSize = Math.Max(stepSize, minAllowedStep); // Ensure minimum step
 
-            // Use 4th order Runge-Kutta method for improved accuracy
-            double k1 = GetSlope(t, y);
-            double k2 = GetSlope(t + stepSize/2, y + k1*stepSize/2);
-            double k3 = GetSlope(t + stepSize/2, y + k2*stepSize/2);
-            double k4 = GetSlope(t + stepSize, y + k3*stepSize);
+            // --- RKF45-like approach (simplified error estimation) ---
+            // Calculate step using RK4
+            double k1 = stepSize * GetSlope(t, y);
+            double k2 = stepSize * GetSlope(t + 0.5 * stepSize, y + 0.5 * k1);
+            double k3 = stepSize * GetSlope(t + 0.5 * stepSize, y + 0.5 * k2);
+            double k4 = stepSize * GetSlope(t + stepSize, y + k3);
 
-            // Compute the 4th order approximation
-            double yNext = y + (k1 + 2*k2 + 2*k3 + k4) * stepSize / 6.0;
+            double y_rk4 = y + (k1 + 2 * k2 + 2 * k3 + k4) / 6.0;
 
-            // Also compute a 2nd order approximation for error estimation
-            double yNextLow = y + (k1 + k4) * stepSize / 2.0;
+            // Estimate error (difference between RK4 and a lower order method, e.g., Heun using same slopes)
+            double y_heun = y + (k1 + k4) / 2.0; // Simplified Heun using k1 and k4
+            double errorEstimate = Math.Abs(y_rk4 - y_heun);
+            double relativeError = (Math.Abs(y_rk4) > 1e-10) ? errorEstimate / Math.Abs(y_rk4) : errorEstimate;
 
-            // Estimate error
-            double error = Math.Abs(yNext - yNextLow);
-            double relError = (Math.Abs(y) > 1e-10) ? error / Math.Abs(y) : error;
-
-            // Adjust step size if needed
             if (_varyStepSize)
             {
-                if (relError > _reduceThreshold && stepSize > (_upperLimit - _lowerLimit) / _maxSteps)
+                // Adjust step size
+                if (relativeError > _reduceThreshold && stepSize > minAllowedStep * 1.1) // Don't shrink below min
                 {
-                    // Error too large, reduce step size and try again
-                    stepSize *= 0.5;
-                    continue;
+                    stepSize = Math.Max(minAllowedStep, stepSize * Math.Pow(safetyFactor * _reduceThreshold / relativeError, 0.25)); // Reduce step
+                                                                                                                                     //Console.WriteLine($"    Reducing step to {stepSize:G3} due to relError {relativeError:G3}");
+                    continue; // Recalculate with smaller step
                 }
-                else if (relError < _increaseThreshold && steps > 0)
+                else if (relativeError < _increaseThreshold)
                 {
-                    // Error small enough, increase step size for next step
-                    stepSize *= 1.5;
+                    stepSize = Math.Min(maxAllowedStep, stepSize * Math.Pow(safetyFactor * _increaseThreshold / relativeError, 0.20)); // Increase step
+                                                                                                                                       //Console.WriteLine($"    Increasing step to {stepSize:G3} due to relError {relativeError:G3}");
                 }
             }
 
-            // Accept the step
-            t += stepSize;
-            y = yNext;
-            steps++;
 
-            _timeValues.Add(t);
-            _resultValues.Add(y);
+            // Accept the RK4 step
+            t += stepSize;
+            y = y_rk4;
+            stepsTaken++;
+
+            // *** UPDATED CALL: Record step using executor ***
+            _statementExecutor.RecordIntegralStep(t, y, _independentVarName, _dependentVarName);
+
+            // Prepare for next potential step size increase (only if error was small)
+            if (_varyStepSize && relativeError < _increaseThreshold)
+            {
+                stepSize = Math.Min(maxAllowedStep, stepSize * Math.Pow(safetyFactor * _increaseThreshold / relativeError, 0.20));
+            }
+            stepSize = Math.Min(stepSize, _upperLimit - t); // Don't overshoot on next loop check
+            stepSize = Math.Max(stepSize, minAllowedStep); // Ensure minimum step for next try
         }
+
+        if (stepsTaken >= _maxSteps)
+        {
+            Console.WriteLine($"Warning: ODE solver reached maximum iterations ({_maxSteps}).");
+        }
+        else
+        {
+            Console.WriteLine($"ODE Solver (Adaptive Step): Finished in {stepsTaken} steps.");
+        }
+
 
         return y; // Return final value
     }
 
+
     /// <summary>
-    /// Get the slope (derivative) at a specific point by evaluating the integrand expression
+    /// Get the slope (derivative) at a specific point by evaluating the integrand variable
+    /// after ensuring the system is solved for the current independent/dependent variables.
     /// </summary>
-    private double GetSlope(double t, double y)
+    private double GetSlope(double tValue, double yValue)
     {
-        // Set independent variable
-        _variableStore.SetVariable(_independentVarName, t);
+        // 1. Set the current state variables
+        _variableStore.SetVariable(_independentVarName, tValue);
+        _variableStore.SetVariable(_dependentVarName, yValue);
 
-        // If integrand depends on the result variable, set it too
-        if (_variableStore.HasVariable(_integrandVarName))
+        // 2. Force the StatementExecutor to resolve algebraic equations
+        //    This assumes the StatementExecutor has a method to do this.
+        //    If not, we might need to pass the list of algebraic equations here,
+        //    or have a more complex interaction. For now, assume executor handles it.
+        //    *** THIS IS A CRITICAL INTERACTION THAT NEEDS CAREFUL DESIGN ***
+        //    Let's assume, for now, that evaluating the integrand variable implicitly
+        //    triggers necessary calculations if the VariableStore/Evaluator are set up correctly.
+        //    A better approach might be needed later.
+
+        // 3. Evaluate the integrand variable (e.g., 'dydt')
+        try
         {
-            double oldValue = _variableStore.GetVariable(_integrandVarName);
-            _variableStore.SetVariable(_integrandVarName, y);
-
-            // Solve for derivative
-            double slope = 0.0;
-            try
+            if (!_variableStore.HasVariable(_integrandVarName))
             {
-                // The slope is determined by solving the state equations
-                // Force EES to resolve the equations with current values
-                _variableStore.ResolveEquations();
-
-                // Get the derivative value
-                slope = _variableStore.GetVariable("dydt"); // Assuming this is the derivative variable
-
-                // Reset the integrand variable to its original value
-                _variableStore.SetVariable(_integrandVarName, oldValue);
-
-                return slope;
+                // This often happens on the first step before equations are solved.
+                // The algebraic solver part of the main loop should calculate it.
+                // Here, we might need to trigger a mini-solve or return 0 if it's expected
+                // to be calculated later. For now, let's assume it gets calculated.
+                // If the algebraic equations depend *only* on t and y, we could solve them here.
+                // But if they depend on other integrated variables, it's complex.
+                Console.WriteLine($"Warning: Integrand '{_integrandVarName}' not directly available. Attempting evaluation anyway.");
+                // Force evaluation by trying to get it - the evaluator might trigger calculation.
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error evaluating slope at t={t}, y={y}: {ex.Message}");
-                throw;
-            }
+            // Retrieve the value - this should ideally reflect the solved state for tValue, yValue
+            double slope = _variableStore.GetVariable(_integrandVarName);
+            // Console.WriteLine($"      Slope({_independentVarName}={tValue:G4}, {_dependentVarName}={yValue:G4}) = {slope:G4}");
+            return slope;
         }
-
-        return 0.0;
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error evaluating slope '{_integrandVarName}' at {_independentVarName}={tValue}, {_dependentVarName}={yValue}: {ex.Message}");
+            // Depending on strategy, might return 0, NaN, or throw. Throwing is safer for now.
+            throw new InvalidOperationException($"Failed to evaluate the derivative '{_integrandVarName}'. Check the state equation.", ex);
+        }
     }
+
 
     /// <summary>
     /// Calculate the number of steps for fixed step size integration
     /// </summary>
     private int CalculateSteps()
     {
-        double range = Math.Abs(_upperLimit - _lowerLimit);
-        double steps = range / _stepSize;
-        return Math.Max(_minSteps, (int)Math.Ceiling(steps));
-    }
-
-    /// <summary>
-    /// Get value of the result variable at a specific point of independent variable
-    /// </summary>
-    private double GetValueAtIndependentVar(double t)
-    {
-        // Set independent variable
-        _variableStore.SetVariable(_independentVarName, t);
-
-        // If this is initial condition, use a default value
-        if (!_variableStore.HasVariable(_integrandVarName))
+        // Ensure step size is positive if specified
+        if (!_useAdaptiveStepSize && _stepSize <= 0)
         {
-            return 0.0; // Default initial value
+            throw new ArgumentException("Fixed StepSize must be positive.", nameof(_stepSize));
         }
 
-        return _variableStore.GetVariable(_integrandVarName);
+        double range = Math.Abs(_upperLimit - _lowerLimit);
+        if (range == 0) return _minSteps; // Avoid division by zero if limits are same
+
+        // Calculate steps based on fixed step size
+        double stepsDouble = range / _stepSize;
+
+        // Ensure minimum number of steps
+        int steps = (int)Math.Ceiling(stepsDouble);
+        steps = Math.Max(_minSteps, steps);
+        // Ensure maximum number of steps is not exceeded (though usually adaptive handles this)
+        steps = Math.Min(_maxSteps, steps);
+
+        return steps;
     }
 
-    /// <summary>
-    /// Get the integration results
-    /// </summary>
-    public (List<double> Times, List<double> Values) GetResults()
-    {
-        return (_timeValues, _resultValues);
-    }
+    // *** REMOVED GetResults() and internal lists (_timeValues, _resultValues) ***
 }
