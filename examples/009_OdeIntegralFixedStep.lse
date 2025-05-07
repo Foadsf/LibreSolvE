@@ -1,0 +1,33 @@
+{ Test Case 009: Simple ODE using Integral with Fixed Step Size }
+" Solves dy/dt = -2*t - 4*t*y with y(0)=0 using a fixed step size "
+" Stores results in Integral Table and plots numerical vs analytical solution "
+
+{ Define the state equation }
+dydt = -2*t - 4*t*y
+
+{ Define simulation parameters }
+t_lower := 0.0
+t_upper := 2.5
+y_initial := 0 // Corresponds to y(t_lower)
+Dt := 0.1      // Fixed step size for integration
+
+{ Solve the ODE using the Integral function with fixed step size }
+" Provide Dt as the fifth argument to specify fixed step integration "
+y = Integral(dydt, t, t_lower, t_upper, Dt)
+" As before, need confirmation on initial condition handling "
+// y := y_initial // Tentative initial value setting
+
+{ Analytical solution for comparison }
+y_analytical = -1/2 + exp(-2*t^2)/2
+
+{ Store results in Integral Table }
+" Store time, numerical solution y, and analytical solution y_analytical "
+" We might want a specific output step size here if Dt is small, e.g., Time:0.1 "
+$IntegralTable t:0.1, y, y_analytical // Output every 0.1 seconds
+
+{ Plot the results }
+" Plot numerical (y) and analytical (y_analytical) solutions vs time (t) "
+PLOT t, y, y_analytical WITH TITLE "ODE Solution (Fixed Step Dt=0.1)" XLABEL "Time (t)" YLABEL "y(t)"
+
+" Expected result at t=2.5: y should be approx -0.499998 "
+" The plot might show slight deviations from analytical due to fixed step size. "

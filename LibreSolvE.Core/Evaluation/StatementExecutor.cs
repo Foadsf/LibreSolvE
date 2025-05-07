@@ -3,7 +3,9 @@ using LibreSolvE.Core.Ast;
 using LibreSolvE.Core.Plotting;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace LibreSolvE.Core.Evaluation;
 
@@ -12,20 +14,30 @@ public class StatementExecutor
     private readonly VariableStore _variableStore;
     private readonly FunctionRegistry _functionRegistry;
     private readonly SolverSettings _solverSettings;
-    private readonly ExpressionEvaluatorVisitor _expressionEvaluator;
-    public List<EquationNode> EquationsToSolve { get; } = new List<EquationNode>();
+    private ExpressionEvaluatorVisitor _expressionEvaluator; // Will be initialized after _statementExecutor is set
+
+    // Categorized statements
+    private readonly List<AssignmentNode> _explicitAssignments = new();
+    private readonly List<EquationNode> _potentialAssignments = new();
+    private readonly List<EquationNode> _algebraicEquations = new();
+    private readonly List<EquationNode> _odeStateEquations = new(); // Equations like "dydt = ..."
+    private readonly List<AssignmentNode> _integralDefinitions = new(); // Equations like "y = INTEGRAL(...)"
+    private readonly List<DirectiveNode> _directives = new();
+    private readonly List<PlotCommandNode> _plotCommands = new();
+
 
     // fields to hold ODE solver settings
-    private bool _varyStepSize = true;
-    private int _minSteps = 5;
-    private int _maxSteps = 2000;
-    private double _reduceThreshold = 1e-1;
-    private double _increaseThreshold = 1e-3;
+    private bool _varyStepSize = true; // Default EES behavior for adaptive
+    private int _minSteps = 100;      // EES default Min Steps for adaptive if not specified
+    private int _maxSteps = 1000;     // EES default Max Steps
+    private double _reduceThreshold = 0.001; // EES default Reduce Error
+    private double _increaseThreshold = 0.00001; // EES default Increase Error
+
 
     // integral table data structure
     private Dictionary<string, List<double>> _integralTable = new Dictionary<string, List<double>>();
-    private string _integralTableVarName = string.Empty;
-    private double _integralTableStepSize = 0.0;
+    private string _integralTableIndVarName = string.Empty; // Independent variable for the table (e.g., 't')
+    private double _integralTableOutputStepSize = 0.0; // If 0, output at every solver step
     private List<string> _integralTableColumns = new List<string>();
 
 
@@ -37,144 +49,212 @@ public class StatementExecutor
         remove { _plottingService.PlotCreated -= value; }
     }
 
-
-    // Updated constructor
     public StatementExecutor(VariableStore variableStore, FunctionRegistry functionRegistry, SolverSettings solverSettings)
     {
         _variableStore = variableStore ?? throw new ArgumentNullException(nameof(variableStore));
         _functionRegistry = functionRegistry ?? throw new ArgumentNullException(nameof(functionRegistry));
         _solverSettings = solverSettings ?? new SolverSettings();
-        // WarningsAsErrors = false: Allow undefined vars during initial scan/assignment execution
-        _expressionEvaluator = new ExpressionEvaluatorVisitor(_variableStore, _functionRegistry, false);
+        // Initialize evaluator here. Pass 'this' to allow ExpressionEvaluator to call back if needed (e.g. for INTEGRAL context).
+        _expressionEvaluator = new ExpressionEvaluatorVisitor(_variableStore, _functionRegistry, this, false);
     }
 
-    // Helper to check if an expression can be evaluated to a constant *now*
-    private bool IsConstantValue(ExpressionNode node, out double value)
+    // Method to access the independent variable name for the integral table
+    public string GetIntegralTableIndVarName()
+    {
+        return _integralTableIndVarName;
+    }
+
+    // Modify IsConstantValue to have an overload or an out parameter indicating if it depended on non-explicit variables
+    private bool IsConstantValue(ExpressionNode node, out double value, out bool dependsOnNonExplicitUnknowns)
     {
         value = 0;
+        dependsOnNonExplicitUnknowns = false;
+        if (node is FunctionCallNode funcCallNode &&
+            string.Equals(funcCallNode.FunctionName, "INTEGRAL", StringComparison.OrdinalIgnoreCase))
+        {
+            return false; // INTEGRAL is never a simple constant assignment
+        }
+
+        // Temporarily set warningsAsErrors to true for this check to catch dependencies on defaults/guesses
+        // that are not yet explicitly set as part of the problem's knowns.
+        bool originalWarningsAsErrors = _expressionEvaluator.GetWarningsAsErrors();
+        _expressionEvaluator.SetWarningsAsErrors(true); // Treat undefined (not explicitly set) as errors for this check
+
         try
         {
             _expressionEvaluator.ResetUndefinedVariableCount();
-            value = _expressionEvaluator.Evaluate(node);
-            // It's constant if evaluation succeeded AND no undefined variables were hit
-            return _expressionEvaluator.GetUndefinedVariableCount() == 0;
+            value = _expressionEvaluator.Evaluate(node); // This will now throw if it hits a var not explicitly set
+            // If it didn't throw, it means all variables in 'node' were either literals or explicitly set.
+            dependsOnNonExplicitUnknowns = false; // No, because it would have thrown.
+            return true;
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("accessed before assignment during solve step"))
+        {
+            // This means the expression depended on a variable that wasn't explicitly set
+            dependsOnNonExplicitUnknowns = true;
+            return false;
         }
         catch
         {
-            return false; // Evaluation failed (e.g., div by zero) or feature not implemented
+            // Other evaluation errors
+            dependsOnNonExplicitUnknowns = true; // Assume dependency if other errors occur
+            return false;
+        }
+        finally
+        {
+            _expressionEvaluator.SetWarningsAsErrors(originalWarningsAsErrors); // Restore original setting
         }
     }
 
     public void Execute(EesFileNode fileNode)
     {
-        Console.WriteLine("--- Pre-processing Statements ---");
-        EquationsToSolve.Clear();
-        var potentialAssignments = new List<EquationNode>();
-        var otherEquations = new List<EquationNode>();
-        var directives = new List<DirectiveNode>();
-        var plotCommands = new List<PlotCommandNode>();
+        CategorizeStatements(fileNode);
 
-        // First pass: collect directives
+        ProcessDirectives();
+        ExecuteExplicitAssignments();
+        ExecutePotentialAssignments(); // This will filter out Integral definitions
+
+        // Now, _integralDefinitions contains y = INTEGRAL(...)
+        // And _algebraicEquations contains other equations, including dydt = ...
+        ExecuteIntegralDefinitions(); // This will solve ODEs and populate _integralTable
+
+        PrintIntegralTable(); // Print table if populated
+
+        SolveRemainingAlgebraicEquations(); // Solves what's left in _algebraicEquations
+
+        ProcessPlotCommands(); // Uses the populated _integralTable
+
+        Console.WriteLine("--- Statement Processing Finished ---");
+    }
+
+    private void CategorizeStatements(EesFileNode fileNode)
+    {
+        Console.WriteLine("--- Pre-processing Statements: Categorizing ---");
         foreach (var statement in fileNode.Statements)
         {
-            if (statement is DirectiveNode directive)
+            switch (statement)
             {
-                directives.Add(directive);
-                ProcessDirective(directive);
-            }
-            else if (statement is PlotCommandNode plotCmd)
-            {
-                plotCommands.Add(plotCmd);
+                case DirectiveNode directive:
+                    _directives.Add(directive);
+                    Console.WriteLine($"Debug: Categorized Directive: {directive.DirectiveText}");
+                    break;
+                case PlotCommandNode plotCmd:
+                    _plotCommands.Add(plotCmd);
+                    Console.WriteLine($"Debug: Categorized Plot Command: {plotCmd.CommandText}");
+                    break;
+                case AssignmentNode assignNode:
+                    // Check if RHS is an INTEGRAL call
+                    if (assignNode.RightHandSide is FunctionCallNode funcCall &&
+                        string.Equals(funcCall.FunctionName, "INTEGRAL", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _integralDefinitions.Add(assignNode);
+                        Console.WriteLine($"Debug: Categorized Integral Definition: {assignNode}");
+                    }
+                    else
+                    {
+                        _explicitAssignments.Add(assignNode);
+                        Console.WriteLine($"Debug: Categorized Explicit Assignment: {assignNode}");
+                    }
+                    break;
+                case EquationNode eqNode:
+                    // First, check if it's an Integral Definition like "y = INTEGRAL(...)"
+                    if (eqNode.LeftHandSide is VariableNode depVarNode &&
+                        eqNode.RightHandSide is FunctionCallNode rhsFuncCall && // Renamed here
+                        string.Equals(rhsFuncCall.FunctionName, "INTEGRAL", StringComparison.OrdinalIgnoreCase)) // Use renamed variable
+                    {
+                        // This is an EquationNode that represents an Integral definition.
+                        // We need to treat it like an AssignmentNode for consistent handling.
+                        // Create a pseudo-AssignmentNode for consistent handling.
+                        var integralAssignNode = new AssignmentNode(depVarNode, rhsFuncCall); // Use renamed variable
+                        _integralDefinitions.Add(integralAssignNode);
+                        Console.WriteLine($"Debug: Categorized Integral Definition (from EquationNode): {eqNode}");
+                    }
+                    // Else, proceed with existing logic for potential assignments / algebraic equations
+                    else
+                    {
+                        bool isPotentiallyAssignable = false;
+                        ExpressionNode? assignableLhs = null;
+                        ExpressionNode? assignableRhs = null;
+
+                        if (eqNode.LeftHandSide is VariableNode varNodeLhsInner)
+                        {
+                            // Try Var = ConstExpr
+                            if (IsConstantValue(eqNode.RightHandSide, out _, out bool rhsDependsOnUnknowns) && !rhsDependsOnUnknowns)
+                            {
+                                isPotentiallyAssignable = true;
+                                assignableLhs = varNodeLhsInner;
+                                assignableRhs = eqNode.RightHandSide;
+                                Console.WriteLine($"Debug: Categorized Potential Assignment: {eqNode}");
+                            }
+                        }
+
+                        if (!isPotentiallyAssignable && eqNode.RightHandSide is VariableNode varNodeRhs)
+                        {
+                            // Try ConstExpr = Var (normalized to Var = ConstExpr)
+                            if (IsConstantValue(eqNode.LeftHandSide, out _, out bool lhsDependsOnUnknowns) && !lhsDependsOnUnknowns)
+                            {
+                                isPotentiallyAssignable = true;
+                                assignableLhs = varNodeRhs;
+                                assignableRhs = eqNode.LeftHandSide;
+                                Console.WriteLine($"Debug: Categorized Potential Assignment (Reversed): {eqNode}");
+                            }
+                        }
+
+                        if (isPotentiallyAssignable)
+                        {
+                            if (assignableLhs != null && assignableRhs != null)
+                            {
+                                _potentialAssignments.Add(new EquationNode(assignableLhs, assignableRhs));
+                            }
+                            else
+                            {
+                                Console.WriteLine($"Warning: Potential assignment categorization issue with {eqNode}. Treating as algebraic.");
+                                _algebraicEquations.Add(eqNode);
+                            }
+                        }
+                        else
+                        {
+                            _algebraicEquations.Add(eqNode);
+                            Console.WriteLine($"Debug: Categorized Algebraic Equation: {eqNode}");
+                        }
+                    }
+                    break;
             }
         }
+    }
 
-        // Second pass: process assignments and equations
-        foreach (var statement in fileNode.Statements)
+    private void ProcessDirectives()
+    {
+        Console.WriteLine("--- Processing Directives ---");
+        foreach (var directive in _directives)
         {
-            if (statement is AssignmentNode explicitAssign) // Handle := assignments directly
+            string text = directive.DirectiveText.Trim();
+            Console.WriteLine($"Processing Directive: {text}");
+            if (text.StartsWith("$IntegralTable", StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine($"Debug: Found explicit assignment: {explicitAssign.Variable.Name}");
-                ExecuteExplicitAssignment(explicitAssign); // Execute immediately
+                ProcessIntegralTableDirective(text);
             }
-            else if (statement is EquationNode eqNode)
+            else if (text.StartsWith("$IntegralAutoStep", StringComparison.OrdinalIgnoreCase))
             {
-                // Check if it's of the form Var = ConstantValue
-                if (eqNode.LeftHandSide is VariableNode varNode && IsConstantValue(eqNode.RightHandSide, out _))
-                {
-                    Console.WriteLine($"Debug: Found potential assignment equation: {eqNode}");
-                    potentialAssignments.Add(eqNode);
-                }
-                // Check if it's ConstantValue = Var (less common but possible)
-                else if (eqNode.RightHandSide is VariableNode varNodeRhs && IsConstantValue(eqNode.LeftHandSide, out _))
-                {
-                    Console.WriteLine($"Debug: Found potential assignment equation (reversed): {eqNode}");
-                    // Treat as assignment Var = Const for processing
-                    potentialAssignments.Add(new EquationNode(varNodeRhs, eqNode.LeftHandSide));
-                }
-                else
-                {
-                    Console.WriteLine($"Debug: Found potential equation to solve: {eqNode}");
-                    otherEquations.Add(eqNode); // Likely needs solving
-                }
-            }
-            // Skip DirectiveNodes here as they've already been processed
-        }
-
-        // Execute potential assignments (Var = ConstExpr)
-        Console.WriteLine("--- Processing Potential Assignments ---");
-        foreach (var eqNode in potentialAssignments)
-        {
-            // We already know RHS is constant, LHS is VariableNode from checks above
-            var variableNode = (VariableNode)eqNode.LeftHandSide;
-            if (IsConstantValue(eqNode.RightHandSide, out double value)) // Re-evaluate to get value
-            {
-                Console.WriteLine($"Assigning {variableNode.Name} = {value} (from equation)");
-                _variableStore.SetVariable(variableNode.Name, value);
+                ProcessIntegralAutoStepDirective(text);
             }
             else
             {
-                // Should not happen based on initial check, but handle defensively
-                Console.WriteLine($"Warning: Could not evaluate RHS for potential assignment: {eqNode}. Treating as equation.");
-                otherEquations.Add(eqNode);
+                Console.WriteLine($"Warning: Unknown directive {text}");
             }
         }
-
-        foreach (var plotCmd in plotCommands)
-        {
-            ProcessPlotCommand(plotCmd);
-        }
-
-        // Remaining equations are those that need the solver
-        EquationsToSolve.AddRange(otherEquations);
-
-        Console.WriteLine("--- Statement Processing Finished ---");
-        Console.WriteLine($"--- Collected {EquationsToSolve.Count} equations for solver ---");
-
     }
 
-    /// <summary>
-    /// Process a directive node
-    /// </summary>
-    private void ProcessDirective(DirectiveNode directive)
+    private void ExecuteExplicitAssignments()
     {
-        string text = directive.DirectiveText;
-
-        if (text.StartsWith("$IntegralTable", StringComparison.OrdinalIgnoreCase))
+        Console.WriteLine("--- Executing Explicit Assignments (:=) ---");
+        foreach (var assignNode in _explicitAssignments)
         {
-            ProcessIntegralTableDirective(text);
-        }
-        else if (text.StartsWith("$IntegralAutoStep", StringComparison.OrdinalIgnoreCase))
-        {
-            ProcessIntegralAutoStepDirective(text);
-        }
-        else
-        {
-            Console.WriteLine($"Warning: Unknown directive {text}");
+            ExecuteSingleExplicitAssignment(assignNode);
         }
     }
 
-    // Executes explicit := assignments
-    private void ExecuteExplicitAssignment(AssignmentNode assignNode)
+    private void ExecuteSingleExplicitAssignment(AssignmentNode assignNode)
     {
         try
         {
@@ -186,164 +266,509 @@ public class StatementExecutor
         catch (Exception ex)
         {
             Console.WriteLine($"Error evaluating explicit assignment for '{assignNode.Variable.Name}': {ex.Message}");
-            // Decide whether to halt
         }
     }
 
-    public bool SolveEquations()
+
+    private void ExecutePotentialAssignments()
     {
-        if (EquationsToSolve.Count == 0)
+        Console.WriteLine("--- Processing Potential Assignments (Var = ConstExpr) ---");
+
+        // This list will hold equations that were initially thought to be potential assignments
+        // but, upon re-evaluation, are found to depend on unknowns.
+        List<EquationNode> toReCategorizeAsAlgebraic = new List<EquationNode>();
+        List<EquationNode> successfullyAssigned = new List<EquationNode>();
+
+        foreach (var eqNode in _potentialAssignments)
         {
-            Console.WriteLine("No equations identified for solver.");
-            return true;
-        }
+            var variableNode = (VariableNode)eqNode.LeftHandSide; // This cast is safe due to categorization logic
 
-        // Pass registry and settings to the solver
-        var solver = new EquationSolver(_variableStore, _functionRegistry, EquationsToSolve, _solverSettings);
-        bool success = solver.Solve();
-
-        return success;
-    }
-
-    /// <summary>
-    /// Handle $IntegralTable directive
-    /// </summary>
-    public void ProcessIntegralTableDirective(string directive)
-    {
-        // Clear any existing integral table
-        _integralTable.Clear();
-        _integralTableColumns.Clear();
-
-        // Parse the directive
-        // Format: $IntegralTable VarName[:Step], var1, var2, ...
-        string tableSpec = directive.Substring("$IntegralTable".Length).Trim();
-
-        // Extract variable name and step size
-        int colonIndex = tableSpec.IndexOf(':');
-        string varName;
-        string? stepSizeStr = null;
-
-        if (colonIndex > 0)
-        {
-            varName = tableSpec.Substring(0, colonIndex).Trim();
-
-            // Extract possible step size and columns
-            int commaIndex = tableSpec.IndexOf(',', colonIndex);
-            if (commaIndex > 0)
+            // Use the strict IsConstantValue to ensure RHS is truly assignable now
+            if (IsConstantValue(eqNode.RightHandSide, out double val, out bool rhsDependsOnUnknowns) && !rhsDependsOnUnknowns)
             {
-                stepSizeStr = tableSpec.Substring(colonIndex + 1, commaIndex - colonIndex - 1).Trim();
-                tableSpec = tableSpec.Substring(commaIndex + 1);
+                Console.WriteLine($"Assigning {variableNode.Name} = {val} (from equation)");
+                _variableStore.SetVariable(variableNode.Name, val);
+                successfullyAssigned.Add(eqNode);
             }
             else
             {
-                stepSizeStr = tableSpec.Substring(colonIndex + 1).Trim();
-                tableSpec = string.Empty;
+                // If it's not a true constant assignment now (e.g., depended on a variable
+                // that is still an unknown for the algebraic solver), it should be an algebraic equation.
+                Console.WriteLine($"Debug: RHS for potential assignment '{eqNode}' still depends on unknowns or was not constant. Re-categorizing to algebraic.");
+                toReCategorizeAsAlgebraic.Add(eqNode);
+            }
+        }
+
+        // Update the _potentialAssignments list to remove those that were re-categorized or assigned
+        // And add the re-categorized ones to _algebraicEquations
+        foreach (var eq in successfullyAssigned)
+        {
+            _potentialAssignments.Remove(eq);
+        }
+        foreach (var eq in toReCategorizeAsAlgebraic)
+        {
+            _potentialAssignments.Remove(eq);
+            if (!_algebraicEquations.Contains(eq)) // Avoid duplicates if somehow already there
+            {
+                _algebraicEquations.Add(eq);
+            }
+        }
+    }
+
+    // In LibreSolvE.Core/Evaluation/StatementExecutor.cs
+
+    private void ExecuteIntegralDefinitions()
+    {
+        Console.WriteLine($"--- Executing Integral Definitions ({_integralDefinitions.Count} found) ---");
+        if (_integralDefinitions.Count == 0 && _algebraicEquations.Any(eq => ContainsDerivativeTerm(eq)))
+        {
+            Console.WriteLine("Warning: Potential ODE state equations found, but no y = INTEGRAL(...) definition to drive the solver.");
+        }
+
+        // equationsForOdeStep should contain all currently known algebraic equations
+        // that might be needed to determine 'dydt_var' at each time step.
+        // The Integral definition itself (y = Integral(...)) is NOT part of this set for the sub-solver.
+        List<EquationNode> equationsForOdeSubSolve = new List<EquationNode>(_algebraicEquations);
+        // Also include any equations that were categorized as ODE state equations previously if any.
+        // (Though, with current logic, state equations for dydt would be in _algebraicEquations initially)
+        equationsForOdeSubSolve.AddRange(_odeStateEquations.Where(ose => !equationsForOdeSubSolve.Contains(ose)));
+
+
+        // This loop was problematic and likely unnecessary with correct categorization:
+        // foreach(var integralDef in _integralDefinitions) {
+        //     if (integralDef is EquationNode eqn) equationsForOdeStep.Remove(eqn); // This line caused CS8121
+        // }
+        // The _integralDefinitions are AssignmentNodes, _algebraicEquations are EquationNodes.
+        // The categorization step should prevent y = Integral(...) from being in _algebraicEquations.
+
+        List<EquationNode> consumedByOde = new List<EquationNode>();
+
+        foreach (var integralAssignNode in _integralDefinitions)
+        {
+            var dependentVarNode = integralAssignNode.Variable;
+            var integralCallNode = (FunctionCallNode)integralAssignNode.RightHandSide;
+
+            // ... (argument extraction for INTEGRAL as before) ...
+            if (integralCallNode.Arguments.Count < 4 || integralCallNode.Arguments.Count > 5)
+            {
+                Console.Error.WriteLine($"Error: INTEGRAL function for '{dependentVarNode.Name}' has an incorrect number of arguments.");
+                continue;
+            }
+            // (Safe casts after check)
+            string dydtVarName = ((VariableNode)integralCallNode.Arguments[0]).Name;
+            string indepVarName = ((VariableNode)integralCallNode.Arguments[1]).Name;
+            double lowerLimit = _expressionEvaluator.Evaluate(integralCallNode.Arguments[2]);
+            double upperLimit = _expressionEvaluator.Evaluate(integralCallNode.Arguments[3]);
+            double fixedStepSize = (integralCallNode.Arguments.Count == 5) ? _expressionEvaluator.Evaluate(integralCallNode.Arguments[4]) : 0.0;
+
+
+            // Find all equations that involve dydtVarName. These are needed by the OdeSolver's internal sub-solve.
+            List<EquationNode> relevantEquationsForDydt = equationsForOdeSubSolve.Where(eq =>
+                ExpressionContainsVariable(eq.LeftHandSide, dydtVarName) ||
+                ExpressionContainsVariable(eq.RightHandSide, dydtVarName)).ToList();
+
+            if (!relevantEquationsForDydt.Any())
+            {
+                Console.Error.WriteLine($"Error: Derivative variable '{dydtVarName}' used in INTEGRAL for '{dependentVarNode.Name}' does not appear to be defined by any available algebraic equations.");
+                continue;
+            }
+            // Add these to a list of equations consumed by ODE steps to potentially remove from main algebraic solve later
+            consumedByOde.AddRange(relevantEquationsForDydt.Where(req => !consumedByOde.Contains(req)));
+
+
+            double initialValueY;
+            // ... (initial value logic for y - remains the same)
+            if (_variableStore.IsExplicitlySet(dependentVarNode.Name))
+            {
+                initialValueY = _variableStore.GetVariable(dependentVarNode.Name);
+                Console.WriteLine($"Debug: Using explicitly set initial value for '{dependentVarNode.Name}': {initialValueY} at t={lowerLimit}");
+            }
+            else
+            {
+                initialValueY = _variableStore.GetVariable(dependentVarNode.Name);
+                if (lowerLimit == 0.0 && Math.Abs(initialValueY - 1.0) < 1e-9 && !_variableStore.HasGuessValue(dependentVarNode.Name))
+                {
+                    initialValueY = 0.0;
+                    _variableStore.SetVariable(dependentVarNode.Name, 0.0);
+                    Console.WriteLine($"Debug: Assuming implicit y(0)=0 for '{dependentVarNode.Name}'. Set to 0.");
+                }
+                Console.WriteLine($"Debug: Using initial value for '{dependentVarNode.Name}': {initialValueY} at t={lowerLimit} (from store/default)");
+            }
+
+            Console.WriteLine($"--- Solving ODE for '{dependentVarNode.Name}' from t={lowerLimit} to t={upperLimit} ---");
+            Console.WriteLine($"    Dependent Var: {dependentVarNode.Name}, Initial Value: {initialValueY}");
+            Console.WriteLine($"    Independent Var: {indepVarName}");
+            Console.WriteLine($"    Derivative Var: {dydtVarName}, determined by system: [{string.Join(" ; ", relevantEquationsForDydt)}]");
+
+
+            var odeSolver = new OdeSolver(
+                _variableStore,
+                _functionRegistry,
+                _expressionEvaluator,
+                relevantEquationsForDydt,  // Pass only the equations relevant to finding dydt
+                dydtVarName,
+                dependentVarNode.Name,
+                initialValueY,
+                indepVarName,
+                lowerLimit,
+                upperLimit,
+                fixedStepSize
+            );
+
+            ConfigureOdeSolver(odeSolver);
+
+            double finalY = odeSolver.Solve();
+            _variableStore.SetVariable(dependentVarNode.Name, finalY);
+            Console.WriteLine($"ODE for '{dependentVarNode.Name}' solved. Final value: {finalY} at t={upperLimit}");
+
+            if (_integralTableColumns.Count > 0 && !string.IsNullOrEmpty(_integralTableIndVarName) &&
+                string.Equals(_integralTableIndVarName, indepVarName, StringComparison.OrdinalIgnoreCase))
+            {
+                var (times, values) = odeSolver.GetResults();
+                UpdateIntegralTable(indepVarName, dependentVarNode.Name, times, values);
+            }
+        }
+
+        // Remove equations that were solely for defining derivatives from the main algebraic set
+        foreach (var eq in consumedByOde)
+        {
+            _algebraicEquations.Remove(eq);
+        }
+        // _odeStateEquations list might be redundant now, or used if we want to explicitly track them
+        // For now, let's clear it as its contents were copied or are part of the consumed set.
+        _odeStateEquations.Clear();
+    }
+
+    // Helper to check if an AST expression contains a specific variable name
+    private bool ExpressionContainsVariable(ExpressionNode node, string varName)
+    {
+        if (node is VariableNode vn && string.Equals(vn.Name, varName, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (node is BinaryOperationNode bon)
+            return ExpressionContainsVariable(bon.Left, varName) || ExpressionContainsVariable(bon.Right, varName);
+        if (node is FunctionCallNode fcn)
+            return fcn.Arguments.Any(arg => ExpressionContainsVariable(arg, varName));
+        return false;
+    }
+
+    // Helper to check if an equation node (LHS or RHS) contains a derivative term (heuristic)
+    private bool ContainsDerivativeTerm(EquationNode eq)
+    {
+        // A simple heuristic: does it contain "dydt" or similar?
+        // This could be improved by checking if any variable in the equation
+        // is used as the first argument to an INTEGRAL function.
+        Func<AstNode, bool> hasDydt = null;
+        hasDydt = (node) =>
+        {
+            if (node is VariableNode vn && vn.Name.ToLowerInvariant().Contains("dydt")) return true;
+            if (node is BinaryOperationNode bon) return hasDydt(bon.Left) || hasDydt(bon.Right);
+            if (node is FunctionCallNode fcn) return fcn.Arguments.Any(a => hasDydt(a));
+            return false;
+        };
+        return hasDydt(eq.LeftHandSide) || hasDydt(eq.RightHandSide);
+    }
+
+
+    public bool SolveRemainingAlgebraicEquations()
+    {
+        Console.WriteLine("\n--- Equation Solving Phase (Algebraic) ---");
+        if (_algebraicEquations.Count == 0)
+        {
+            Console.WriteLine("No algebraic equations identified for solver.");
+            return true; // No equations to solve is considered a success in this context.
+        }
+
+        var solver = new EquationSolver(_variableStore, _functionRegistry, _algebraicEquations, _solverSettings);
+        bool success = solver.Solve();
+
+        if (success)
+        {
+            Console.WriteLine("\n--- Algebraic Solver Phase Completed Successfully ---");
+            _algebraicEquations.Clear(); // Clear equations once successfully solved
+        }
+        else
+        {
+            Console.Error.WriteLine("\n--- Algebraic Solver FAILED ---");
+            // Do not clear if failed, might be useful for debugging or retry
+        }
+        return success; // Return the actual success status from the solver.
+    }
+
+
+    public void ProcessIntegralTableDirective(string directiveText)
+    {
+        _integralTable.Clear();
+        _integralTableColumns.Clear();
+        _integralTableIndVarName = string.Empty;
+        _integralTableOutputStepSize = 0.0; // Default: output at every internal solver step
+
+        string specPart = directiveText.Substring("$IntegralTable".Length).Trim();
+
+        // Regex to capture: VarName[:StepSize], Col1, Col2, ... // Comment
+        // Allows VarName, VarName:Step, VarName, Col1, VarName:Step, Col1
+        var match = Regex.Match(specPart, @"^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::\s*([0-9\.]+))?\s*(?:,(.*))?$");
+
+        if (!match.Success)
+        {
+            // Try just VarName
+            match = Regex.Match(specPart, @"^\s*([a-zA-Z_][a-zA-Z0-9_]*)(\s*//.*|\s*\{.*\}|\s*""."")?$");
+            if (!match.Success)
+            {
+                Console.Error.WriteLine($"Error: Could not parse $IntegralTable directive: {directiveText}");
+                return;
+            }
+        }
+
+        _integralTableIndVarName = match.Groups[1].Value.Trim();
+        _integralTableColumns.Add(_integralTableIndVarName); // Independent var is always the first column
+
+        if (match.Groups[2].Success && !string.IsNullOrWhiteSpace(match.Groups[2].Value))
+        {
+            if (double.TryParse(match.Groups[2].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double step))
+            {
+                _integralTableOutputStepSize = step;
+            }
+            else
+            {
+                Console.Error.WriteLine($"Warning: Could not parse step size '{match.Groups[2].Value}' in $IntegralTable. Using solver steps.");
+            }
+        }
+
+        string columnsString = string.Empty;
+        if (match.Groups[3].Success)
+        { // If there was a comma and potentially more columns
+            columnsString = match.Groups[3].Value;
+        }
+        else if (!match.Groups[2].Success && specPart.Contains(","))
+        { // VarName, Col1,... (no step)
+            int firstComma = specPart.IndexOf(',');
+            if (firstComma != -1)
+            {
+                columnsString = specPart.Substring(firstComma + 1);
+            }
+        }
+
+
+        if (!string.IsNullOrWhiteSpace(columnsString))
+        {
+            // Remove any trailing comments from the columns string
+            var commentMatch = Regex.Match(columnsString, @"(\s*//.*|\s*\{.*\}|\s*"".*"")\s*$");
+            if (commentMatch.Success)
+            {
+                columnsString = columnsString.Remove(commentMatch.Index).Trim();
+            }
+
+            var cols = columnsString.Split(new[] { ',', ' ', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                                    .Select(c => c.Trim())
+                                    .Where(c => !string.IsNullOrEmpty(c));
+            foreach (var col in cols)
+            {
+                if (!_integralTableColumns.Contains(col, StringComparer.OrdinalIgnoreCase))
+                {
+                    _integralTableColumns.Add(col);
+                }
+            }
+        }
+
+        // Initialize lists for all columns
+        foreach (var colName in _integralTableColumns)
+        {
+            _integralTable[colName] = new List<double>();
+        }
+
+        Console.WriteLine($"Created Integral Table. Independent Variable: '{_integralTableIndVarName}', Output Step: {_integralTableOutputStepSize}. Columns: {string.Join(", ", _integralTableColumns)}");
+    }
+
+    public void UpdateIntegralTable(string indepVarName, string depVarName, List<double> indepValues, List<double> depValues)
+    {
+        if (_integralTableColumns.Count == 0 || !string.Equals(_integralTableIndVarName, indepVarName, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("Warning: $IntegralTable not defined or independent variable mismatch. Cannot update table.");
+            return;
+        }
+
+        Console.WriteLine($"Updating Integral Table with {indepValues.Count} points for {indepVarName} and {depVarName}.");
+
+        // Clear existing data for these primary variables
+        _integralTable[_integralTableIndVarName].Clear();
+        if (_integralTable.ContainsKey(depVarName)) _integralTable[depVarName].Clear();
+
+        foreach (var colName in _integralTableColumns)
+        {
+            if (!string.Equals(colName, indepVarName, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(colName, depVarName, StringComparison.OrdinalIgnoreCase) &&
+                _integralTable.ContainsKey(colName)) // Ensure column exists before clearing
+            {
+                _integralTable[colName].Clear();
+            }
+        }
+
+        // Determine output points based on _integralTableOutputStepSize
+        List<double> outputTimes = new List<double>(); // DECLARED HERE
+        List<double> outputDepValues = new List<double>();
+        // List<List<double>> outputOtherValues = new List<List<double>>(); // Not used currently
+        // for(int k=0; k < _integralTableColumns.Count - 2; ++k) outputOtherValues.Add(new List<double>()); // Not used currently
+
+
+        if (_integralTableOutputStepSize > 0 && indepValues.Count > 1)
+        {
+            double startTime = indepValues.First();
+            double endTime = indepValues.Last();
+            double currentTime = startTime;
+            int k_idx = 0; // Index for original data
+
+            while (currentTime <= endTime + 1e-9 * Math.Abs(endTime - startTime)) // Add relative epsilon
+            {
+                while (k_idx + 1 < indepValues.Count && indepValues[k_idx + 1] < currentTime - 1e-9) // Search with tolerance
+                {
+                    k_idx++;
+                }
+
+                double t0 = indepValues[k_idx];
+                double y0 = depValues[k_idx];
+
+                outputTimes.Add(currentTime);
+
+                if (k_idx + 1 >= indepValues.Count || Math.Abs(currentTime - t0) < 1e-9)
+                {
+                    outputDepValues.Add(y0);
+                }
+                else
+                {
+                    double t1 = indepValues[k_idx + 1];
+                    double y1 = depValues[k_idx + 1];
+                    if (Math.Abs(t1 - t0) < 1e-9)
+                    {
+                        outputDepValues.Add(y0);
+                    }
+                    else
+                    {
+                        double fraction = (currentTime - t0) / (t1 - t0);
+                        outputDepValues.Add(y0 + fraction * (y1 - y0));
+                    }
+                }
+
+                if (Math.Abs(currentTime - endTime) < 1e-9) break; // Reached end
+
+                currentTime += _integralTableOutputStepSize;
+                if (currentTime > endTime && Math.Abs(outputTimes.Last() - endTime) > 1e-9)
+                { // If overshot, add endTime as last point
+                    outputTimes.Add(endTime);
+                    // Interpolate for depValues at endTime
+                    // Re-find k_idx for endTime
+                    int k_end_idx = 0;
+                    while (k_end_idx + 1 < indepValues.Count && indepValues[k_end_idx + 1] < endTime - 1e-9) k_end_idx++;
+
+                    double t0_end = indepValues[k_end_idx]; double y0_end = depValues[k_end_idx];
+                    if (k_end_idx + 1 >= indepValues.Count || Math.Abs(endTime - t0_end) < 1e-9) outputDepValues.Add(y0_end);
+                    else
+                    {
+                        double t1_end = indepValues[k_end_idx + 1]; double y1_end = depValues[k_end_idx + 1];
+                        if (Math.Abs(t1_end - t0_end) < 1e-9) outputDepValues.Add(y0_end);
+                        else outputDepValues.Add(y0_end + (endTime - t0_end) / (t1_end - t0_end) * (y1_end - y0_end));
+                    }
+                    break;
+                }
+                if (outputTimes.Count > (_maxSteps > 0 ? _maxSteps * 5 : 10000))
+                { // Safety break, ensure _maxSteps is positive
+                    Console.WriteLine("Warning: Exceeded maximum output points for integral table. Truncating.");
+                    break;
+                }
             }
         }
         else
         {
-            int commaIndex = tableSpec.IndexOf(',');
-            if (commaIndex > 0)
+            outputTimes.AddRange(indepValues);
+            outputDepValues.AddRange(depValues);
+        }
+
+        if (!outputTimes.Any())
+        { // If somehow outputTimes is empty, add initial point at least
+            if (indepValues.Any())
             {
-                varName = tableSpec.Substring(0, commaIndex).Trim();
-                tableSpec = tableSpec.Substring(commaIndex + 1);
+                outputTimes.Add(indepValues.First());
+                outputDepValues.Add(depValues.First());
             }
             else
             {
-                varName = tableSpec.Trim();
-                tableSpec = string.Empty;
+                Console.WriteLine("Warning: No data points to update integral table.");
+                return;
             }
         }
 
-        // Store the integration variable name
-        _integralTableVarName = varName;
-
-        // Process step size if provided
-        if (!string.IsNullOrEmpty(stepSizeStr))
+        _integralTable[_integralTableIndVarName].AddRange(outputTimes);
+        if (_integralTable.ContainsKey(depVarName))
         {
-            // Try to parse as a number or look up as a variable
-            if (double.TryParse(stepSizeStr, out double step))
-            {
-                _integralTableStepSize = step;
-            }
-            else if (_variableStore.HasVariable(stepSizeStr))
-            {
-                _integralTableStepSize = _variableStore.GetVariable(stepSizeStr);
-            }
-            else
-            {
-                Console.WriteLine($"Warning: Cannot interpret '{stepSizeStr}' as step size in $IntegralTable directive");
-                _integralTableStepSize = 0.0;
-            }
+            _integralTable[depVarName].AddRange(outputDepValues);
         }
 
-        // Process columns
-        if (!string.IsNullOrEmpty(tableSpec))
+        for (int i = 0; i < outputTimes.Count; i++) // 'i' IS DECLARED HERE
         {
-            string[] columns = tableSpec.Split(new[] { ',', ' ', ';' }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (string column in columns)
+            _variableStore.SetVariable(indepVarName, outputTimes[i]); // outputTimes[i] IS VALID
+            _variableStore.SetVariable(depVarName, outputDepValues[i]);
+
+            foreach (string colName in _integralTableColumns)
             {
-                _integralTableColumns.Add(column.Trim());
-                _integralTable[column.Trim()] = new List<double>();
-            }
-        }
-
-        // Always include the independent variable column
-        if (!_integralTable.ContainsKey(_integralTableVarName))
-        {
-            _integralTable[_integralTableVarName] = new List<double>();
-            _integralTableColumns.Insert(0, _integralTableVarName);
-        }
-
-        Console.WriteLine($"Created Integral Table with variable {_integralTableVarName} and columns: {string.Join(", ", _integralTableColumns)}");
-    }
-
-    /// <summary>
-    /// Add a row to the integral table
-    /// </summary>
-    public void AddIntegralTableRow(double independentVarValue)
-    {
-        if (_integralTable.Count == 0 || _integralTableColumns.Count == 0)
-        {
-            return; // No integral table defined
-        }
-
-        // Add independent variable value
-        _integralTable[_integralTableVarName].Add(independentVarValue);
-
-        // Add other column values
-        foreach (string column in _integralTableColumns)
-        {
-            if (column != _integralTableVarName)
-            {
-                if (_variableStore.HasVariable(column))
+                if (string.Equals(colName, indepVarName, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(colName, depVarName, StringComparison.OrdinalIgnoreCase))
                 {
-                    _integralTable[column].Add(_variableStore.GetVariable(column));
+                    continue;
+                }
+                if (!_integralTable.ContainsKey(colName)) _integralTable[colName] = new List<double>();
+
+                EquationNode? definingEqForCol = _algebraicEquations
+                    .FirstOrDefault(eq => eq.LeftHandSide is VariableNode lhsVar && string.Equals(lhsVar.Name, colName, StringComparison.OrdinalIgnoreCase));
+
+                if (definingEqForCol == null)
+                {
+                    definingEqForCol = _odeStateEquations
+                        .FirstOrDefault(eq => eq.LeftHandSide is VariableNode lhsVar && string.Equals(lhsVar.Name, colName, StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (definingEqForCol != null) // Explicit check
+                {
+                    try
+                    {
+                        // Now definingEqForCol is known to be not null in this block
+                        double val = _expressionEvaluator.Evaluate(definingEqForCol.RightHandSide);
+                        _integralTable[colName].Add(val);
+                    }
+                    catch (Exception ex)
+                    {
+                        double currentTimeForLog = outputTimes[i];
+                        Console.WriteLine($"Warning: Could not evaluate '{colName}' for integral table at t={currentTimeForLog}: {ex.Message}");
+                        _integralTable[colName].Add(double.NaN);
+                    }
                 }
                 else
                 {
-                    _integralTable[column].Add(0.0); // Default value if variable not found
+                    if (_variableStore.HasVariable(colName))
+                    {
+                        _integralTable[colName].Add(_variableStore.GetVariable(colName));
+                    }
+                    else
+                    {
+                        double currentTimeForLog = outputTimes[i];
+                        Console.WriteLine($"Warning: Variable '{colName}' for integral table not defined by an equation or in store at t={currentTimeForLog}.");
+                        _integralTable[colName].Add(double.NaN);
+                    }
                 }
             }
         }
     }
 
-    /// <summary>
-    /// Print the integral table
-    /// </summary>
+
     public void PrintIntegralTable()
     {
-        if (_integralTable.Count == 0 || _integralTableColumns.Count == 0)
+        if (_integralTable.Count == 0 || _integralTableColumns.Count == 0 || !_integralTable.First().Value.Any())
         {
-            Console.WriteLine("No Integral Table available.");
+            // Console.WriteLine("No Integral Table data available to print or table is empty."); // Suppress if not explicitly requested
             return;
         }
 
-        // Print header
-        Console.WriteLine("--- Integral Table ---");
-        Console.WriteLine(string.Join("\t", _integralTableColumns));
+        Console.WriteLine("\n--- Integral Table ---");
+        Console.WriteLine(string.Join("\t", _integralTableColumns.Select(c => c.PadRight(12)))); // Header
 
-        // Print rows
         int rowCount = _integralTable[_integralTableColumns[0]].Count;
         for (int i = 0; i < rowCount; i++)
         {
@@ -351,84 +776,59 @@ public class StatementExecutor
             for (int j = 0; j < _integralTableColumns.Count; j++)
             {
                 string columnName = _integralTableColumns[j];
-                rowValues[j] = _integralTable[columnName][i].ToString("G6");
+                if (i < _integralTable[columnName].Count)
+                {
+                    rowValues[j] = _integralTable[columnName][i].ToString("F6", CultureInfo.InvariantCulture).PadRight(12);
+                }
+                else
+                {
+                    rowValues[j] = "N/A".PadRight(12);
+                }
             }
             Console.WriteLine(string.Join("\t", rowValues));
         }
-
         Console.WriteLine("----------------------");
     }
 
-    /// <summary>
-    /// Get the integral table data
-    /// </summary>
     public Dictionary<string, List<double>> GetIntegralTable()
     {
         return _integralTable;
     }
 
-    /// <summary>
-    /// Updates the integral table with data from an ODE solution
-    /// </summary>
-    public void UpdateIntegralTable(string independentVarName, string dependentVarName, List<double> times, List<double> values)
+    public void ProcessIntegralAutoStepDirective(string directiveText)
     {
-        if (_integralTable.Count == 0 || !_integralTable.ContainsKey(independentVarName))
+        string settingsPart = directiveText.Substring("$IntegralAutoStep".Length).Trim();
+        var settings = settingsPart.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (var setting in settings)
         {
-            // No integral table defined or wrong independent variable
-            return;
-        }
+            var parts = setting.Split('=');
+            if (parts.Length != 2) continue;
 
-        // Update the independent variable column
-        _integralTable[independentVarName] = new List<double>(times);
+            string key = parts[0].Trim().ToLowerInvariant();
+            string valueStr = parts[1].Trim();
 
-        // Update the dependent variable column if it's in the table
-        if (_integralTable.ContainsKey(dependentVarName))
-        {
-            _integralTable[dependentVarName] = new List<double>(values);
-        }
-
-        // Calculate other columns based on these values
-        for (int i = 0; i < times.Count; i++)
-        {
-            // Set time and value for this step
-            _variableStore.SetVariable(independentVarName, times[i]);
-            _variableStore.SetVariable(dependentVarName, values[i]);
-
-            // Update other columns in the integral table
-            foreach (string column in _integralTableColumns)
+            if (!double.TryParse(valueStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double numValue))
             {
-                if (column != independentVarName && column != dependentVarName &&
-                    _variableStore.HasVariable(column))
-                {
-                    // Make sure the list has enough space
-                    while (_integralTable[column].Count <= i)
-                    {
-                        _integralTable[column].Add(0.0);
-                    }
+                Console.WriteLine($"Warning: Could not parse value '{valueStr}' for $IntegralAutoStep key '{key}'.");
+                continue;
+            }
 
-                    // Update the value
-                    _integralTable[column][i] = _variableStore.GetVariable(column);
-                }
+            switch (key)
+            {
+                case "vary": _varyStepSize = (int)numValue == 1; break;
+                case "min": _minSteps = (int)numValue; break;
+                case "max": _maxSteps = (int)numValue; break;
+                case "reduce": _reduceThreshold = numValue; break;
+                case "increase": _increaseThreshold = numValue; break;
+                default: Console.WriteLine($"Warning: Unknown $IntegralAutoStep key '{key}'."); break;
             }
         }
+        Console.WriteLine($"IntegralAutoStep configured: Vary={_varyStepSize}, Min={_minSteps}, Max={_maxSteps}, Reduce={_reduceThreshold}, Increase={_increaseThreshold}");
     }
 
-
-
-    /// <summary>
-    /// Handle $IntegralAutoStep directive
-    /// </summary>
-    public void ProcessIntegralAutoStepDirective(string directive)
-    {
-        // Method implementation here...
-    }
-
-    /// <summary>
-    /// Configure an ODE solver with current auto-step settings
-    /// </summary>
     public void ConfigureOdeSolver(OdeSolver solver)
     {
-        // Use all the fields that were previously marked as unused
         solver.ConfigureAdaptiveStepSize(
             _varyStepSize,
             _minSteps,
@@ -437,32 +837,30 @@ public class StatementExecutor
             _increaseThreshold);
     }
 
-    // method to process PLOT commands
-    private void ProcessPlotCommand(PlotCommandNode plotCmd)
+    private void ProcessPlotCommands()
     {
-        try
+        Console.WriteLine("\n--- Processing Plot Commands ---");
+        foreach (var plotCmd in _plotCommands)
         {
-            // Skip if we don't have any integral table data
-            if (_integralTable.Count == 0)
+            try
             {
-                Console.WriteLine("Warning: No integral table data available for plotting.");
-                return;
+                if (_integralTable.Count == 0 || !_integralTable.First().Value.Any())
+                {
+                    Console.WriteLine($"Warning: No integral table data available for plot command: {plotCmd.CommandText}. Plot will not be generated.");
+                    continue;
+                }
+                Console.WriteLine($"Processing Plot Command: {plotCmd.CommandText}");
+                var plotData = _plottingService.CreatePlot(plotCmd.CommandText, _integralTable);
+
+                string fileName = $"plot_{DateTime.Now:yyyyMMdd_HHmmssfff}.svg";
+                _plottingService.SaveToSvg(plotData, fileName);
+                Console.WriteLine($"Plot saved to {fileName}");
             }
-
-            // Create the plot
-            var plotData = _plottingService.CreatePlot(plotCmd.CommandText, _integralTable);
-
-            // Save to SVG file
-            string fileName = $"plot_{DateTime.Now:yyyyMMdd_HHmmss}.svg";
-            _plottingService.SaveToSvg(plotData, fileName);
-
-            Console.WriteLine($"Plot saved to {fileName}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error processing plot command: {ex.Message}");
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error processing plot command '{plotCmd.CommandText}': {ex.Message}");
+                if (ex.InnerException != null) Console.WriteLine($"  Inner: {ex.InnerException.Message}");
+            }
         }
     }
-
-
 }

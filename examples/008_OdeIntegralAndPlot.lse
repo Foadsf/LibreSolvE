@@ -1,0 +1,44 @@
+{ Test Case 008: Simple ODE using Integral and Plotting }
+" Solves dy/dt = -2*t - 4*t*y with y(0)=0 using adaptive step size "
+" Stores results in Integral Table and plots numerical vs analytical solution "
+
+{ Define the state equation }
+dydt = -2*t - 4*t*y
+
+{ Define simulation parameters }
+t_lower := 0.0
+t_upper := 2.5
+y_initial := 0 // Corresponds to y(t_lower)
+
+{ Solve the ODE using the Integral function - adaptive step size (no step argument) }
+" EES requires the Integral function to be assigned to the variable being integrated "
+" and the initial condition is handled implicitly by the solver start "
+" We need to ensure LibreSolvE handles this correctly. The variable 'y' should "
+" represent the value at t=t_upper after integration. "
+" The initial value y_initial should ideally be linked to y at t=t_lower. "
+" Let's assume the Integral function needs the initial value somehow, or the variable store handles it. "
+" The EES example implies 'y' itself might be used recursively, which is tricky. "
+" A cleaner way might be y = y_initial + Integral(dydt, t, t_lower, t_upper) "
+" Let's try the EES Appendix G approach first: "
+y = Integral(dydt, t, t_lower, t_upper)
+" NOTE: Need to confirm how LibreSolvE handles the initial condition y(0)=0 here. "
+" It might require setting y=0 before the Integral call, or implicitly assume y=0 "
+" if y is the variable being integrated and not otherwise defined at t=0. "
+" The provided log for example 007 suggests y is just assigned the *result* of Integral,"
+" which might be just the final value, potentially ignoring the ODE nature during setup."
+" Let's add an explicit initial value setting for clarity, although EES might not need it."
+// y := y_initial // Let's see if this helps or conflicts. Typically done via solver setup.
+
+{ Analytical solution for comparison }
+y_analytical = -1/2 + exp(-2*t^2)/2
+
+{ Store results in Integral Table }
+" Store time, numerical solution y, and analytical solution y_analytical "
+$IntegralTable t, y, y_analytical
+
+{ Plot the results }
+" Plot numerical (y) and analytical (y_analytical) solutions vs time (t) "
+PLOT t, y, y_analytical WITH TITLE "ODE Solution: dy/dt = -2t - 4ty" XLABEL "Time (t)" YLABEL "y(t)"
+
+" Expected result at t=2.5: y should be approx -0.499998 (from analytical solution) "
+" The plot should show the numerical solution closely matching the analytical curve. "

@@ -136,7 +136,7 @@ try
     // 6. Solve Equations
     Console.WriteLine("\n--- Equation Solving Phase ---");
     // The executor now internally creates and uses the EquationSolver
-    bool solveSuccess = executor.SolveEquations();
+    bool solveSuccess = executor.SolveRemainingAlgebraicEquations();
 
     if (solveSuccess)
     {

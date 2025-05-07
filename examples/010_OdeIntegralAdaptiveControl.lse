@@ -1,0 +1,36 @@
+{ Test Case 010: Simple ODE using Integral with Controlled Adaptive Step }
+" Solves dy/dt = -2*t - 4*t*y with y(0)=0 using adaptive step size "
+" Uses $IntegralAutoStep to control the adaptive algorithm parameters "
+" Stores results in Integral Table and plots numerical vs analytical solution "
+
+{ Define adaptive step parameters - Making them slightly different from example 007's defaults }
+$IntegralAutoStep Vary=1 Min=10 Max=1000 Reduce=1e-2 Increase=1e-4
+
+{ Define the state equation }
+dydt = -2*t - 4*t*y
+
+{ Define simulation parameters }
+t_lower := 0.0
+t_upper := 2.5
+y_initial := 0 // Corresponds to y(t_lower)
+
+{ Solve the ODE using the Integral function - adaptive step size (no step argument) }
+" The $IntegralAutoStep directive should influence the solver used by this call "
+y = Integral(dydt, t, t_lower, t_upper)
+" As before, need confirmation on initial condition handling "
+// y := y_initial // Tentative initial value setting
+
+{ Analytical solution for comparison }
+y_analytical = -1/2 + exp(-2*t^2)/2
+
+{ Store results in Integral Table }
+" Store time, numerical solution y, and analytical solution y_analytical "
+" Using an output step ensures consistent points for plotting "
+$IntegralTable t:0.05, y, y_analytical // Output every 0.05 seconds
+
+{ Plot the results }
+" Plot numerical (y) and analytical (y_analytical) solutions vs time (t) "
+PLOT t, y, y_analytical WITH TITLE "ODE Solution (Controlled Adaptive Step)" XLABEL "Time (t)" YLABEL "y(t)"
+
+" Expected result at t=2.5: y should be approx -0.499998 "
+" The plot should show close agreement with the analytical solution. "

@@ -344,7 +344,7 @@ class MainWindow : Window
 
             // 6. Solve Equations
             outputWriter.WriteLine("\n--- Equation Solving Phase ---");
-            bool solveSuccess = executor.SolveEquations();
+            bool solveSuccess = executor.SolveRemainingAlgebraicEquations();
 
             if (solveSuccess)
             {
