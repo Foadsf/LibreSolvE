@@ -1,0 +1,53 @@
+{ Test Case 018_SIREpidemicModel.lse - FIXED }
+" SIR Epidemic Model "
+" Models the spread of infectious disease through a population "
+" Demonstrates compartmental modeling in epidemiology "
+
+$IntegralAutoStep Vary=1 Min=20 Max=1000 Reduce=1e-4 Increase=1e-6
+
+{ System parameters }
+beta := 0.3    // Infection rate parameter
+gamma := 0.1   // Recovery rate parameter
+N := 1000      // Total population size
+
+{ Initial conditions - using explicit assignment with := }
+S_initial := 999   // Initial susceptible population
+I_initial := 1     // Initial infected population
+R_initial := 0     // Initial recovered population
+
+{ Check that initial conditions match total population }
+N_check := S_initial + I_initial + R_initial
+
+{ Set initial values for integration variables - CRITICAL FIX }
+S := S_initial
+I := I_initial
+R := R_initial
+
+{ SIR model differential equations }
+{ dS/dt = -β*S*I/N }              // Rate of change of susceptible population
+{ dI/dt = β*S*I/N - γ*I }         // Rate of change of infected population
+{ dR/dt = γ*I }                   // Rate of change of recovered population
+dS_dt = -beta * S * I / N
+dI_dt = beta * S * I / N - gamma * I
+dR_dt = gamma * I
+
+{ Simulation parameters }
+t_sim := 100.0  // Simulation duration
+
+{ Solve the ODEs }
+S = Integral(dS_dt, t, 0, t_sim)
+I = Integral(dI_dt, t, 0, t_sim)
+R = Integral(dR_dt, t, 0, t_sim)
+
+{ Calculate total population at each step to verify conservation }
+N_total := S + I + R
+
+{ Calculate basic reproduction number R0 }
+R0 := beta/gamma
+
+{ Store results in Integral Table }
+$IntegralTable t, S, I, R, N_total
+
+{ Plot the results }
+PLOT t, S, I, R WITH TITLE "SIR Epidemic Model" XLABEL "Time (days)" YLABEL "Population"
+PLOT t, N_total WITH TITLE "Population Conservation" XLABEL "Time (days)" YLABEL "Total Population"

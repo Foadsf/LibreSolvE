@@ -1,0 +1,35 @@
+{ Test Case 015_VanDerPolOscillator.lse }
+" Van der Pol Oscillator "
+" Models: d²x/dt² - μ(1-x²)dx/dt + x = 0 "
+" Demonstrates non-linear system with limit cycle behavior "
+
+$IntegralAutoStep Vary=1 Min=20 Max=5000 Reduce=1e-4 Increase=1e-6
+
+{ System parameter }
+mu := 1.0  // Damping parameter (μ)
+
+{ Initial conditions }
+x_initial := 0.1  // Initial displacement
+v_initial := 0.0  // Initial velocity
+
+{ Define state equations for Van der Pol oscillator }
+{ Convert second-order to first-order system: }
+{ dx/dt = v }
+{ dv/dt = μ(1-x²)v - x }
+dx_dt = v
+dv_dt = mu*(1-x^2)*v - x
+
+{ Simulation parameters }
+t_sim := 20.0  // Simulation duration
+
+{ Solve the ODEs }
+x = Integral(dx_dt, t, 0, t_sim)
+v = Integral(dv_dt, t, 0, t_sim)
+
+{ Store results in Integral Table }
+$IntegralTable t, x, v
+
+{ Plot the results }
+PLOT t, x WITH TITLE "Van der Pol Oscillator - Position vs Time" XLABEL "Time" YLABEL "Position (x)"
+PLOT t, v WITH TITLE "Van der Pol Oscillator - Velocity vs Time" XLABEL "Time" YLABEL "Velocity (v)"
+PLOT x, v WITH TITLE "Van der Pol Oscillator - Phase Portrait" XLABEL "Position (x)" YLABEL "Velocity (v)"

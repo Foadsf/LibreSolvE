@@ -1,0 +1,36 @@
+{ Test Case 017_PredatorPreyModel.lse }
+" Lotka-Volterra Predator-Prey Model "
+" Models population dynamics between predators and prey "
+" Demonstrates oscillatory behavior in ecological systems "
+
+$IntegralAutoStep Vary=1 Min=50 Max=10000 Reduce=1e-4 Increase=1e-6
+
+{ System parameters }
+alpha := 0.1   // Prey growth rate
+beta := 0.02   // Prey death rate due to predation
+gamma := 0.01  // Predator death rate
+delta := 0.01  // Predator growth rate from consuming prey
+
+{ Initial conditions }
+prey_initial := 40     // Initial prey population
+predator_initial := 9  // Initial predator population
+
+{ Lotka-Volterra equations }
+{ dx/dt = α*x - β*x*y }      // Rate of change of prey population
+{ dy/dt = -γ*y + δ*x*y }     // Rate of change of predator population
+dprey_dt = alpha*prey - beta*prey*predator
+dpredator_dt = -gamma*predator + delta*prey*predator
+
+{ Simulation parameters }
+t_sim := 200.0  // Simulation duration
+
+{ Solve the ODEs }
+prey = Integral(dprey_dt, t, 0, t_sim)
+predator = Integral(dpredator_dt, t, 0, t_sim)
+
+{ Store results in Integral Table }
+$IntegralTable t, prey, predator
+
+{ Plot the results }
+PLOT t, prey, predator WITH TITLE "Predator-Prey Population Dynamics" XLABEL "Time" YLABEL "Population"
+PLOT prey, predator WITH TITLE "Predator-Prey Phase Portrait" XLABEL "Prey Population" YLABEL "Predator Population"

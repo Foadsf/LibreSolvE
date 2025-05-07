@@ -1,0 +1,65 @@
+{ Test Case 019_HeatTransfer1D.lse }
+" Heat Transfer in a 1D Rod - Finite Difference Approximation "
+" Models heat diffusion with boundary conditions "
+" Demonstrates numerical solution of PDEs through discretization "
+
+$IntegralAutoStep Vary=1 Min=50 Max=5000 Reduce=1e-4 Increase=1e-6
+
+{ Physical parameters }
+L := 1.0          "[m]"     // Length of rod
+alpha := 0.01     "[m²/s]"  // Thermal diffusivity
+T_left := 100.0   "[°C]"    // Left boundary temperature
+T_right := 0.0    "[°C]"    // Right boundary temperature
+T_initial := 25.0 "[°C]"    // Initial temperature throughout the rod
+
+{ Discretization parameters }
+n := 5                      // Number of interior nodes (total nodes = n+2 including boundaries)
+dx := L/(n+1)               // Spatial step size
+dt := 0.1                   // Time step size
+
+{ Initialize temperature array at nodes }
+T1 := T_initial             // Interior node 1
+T2 := T_initial             // Interior node 2
+T3 := T_initial             // Interior node 3
+T4 := T_initial             // Interior node 4
+T5 := T_initial             // Interior node 5
+
+{ Simulation parameters }
+t_sim := 5.0      "[s]"     // Simulation duration
+
+{ System of ODEs for heat equation using finite difference approximation }
+{ dT/dt = α * d²T/dx² }
+dT1_dt = alpha * ((T_left - 2*T1 + T2)/dx^2)
+dT2_dt = alpha * ((T1 - 2*T2 + T3)/dx^2)
+dT3_dt = alpha * ((T2 - 2*T3 + T4)/dx^2)
+dT4_dt = alpha * ((T3 - 2*T4 + T5)/dx^2)
+dT5_dt = alpha * ((T4 - 2*T5 + T_right)/dx^2)
+
+{ Solve the ODEs }
+T1 = Integral(dT1_dt, t, 0, t_sim)
+T2 = Integral(dT2_dt, t, 0, t_sim)
+T3 = Integral(dT3_dt, t, 0, t_sim)
+T4 = Integral(dT4_dt, t, 0, t_sim)
+T5 = Integral(dT5_dt, t, 0, t_sim)
+
+{ Store results in Integral Table }
+$IntegralTable t, T1, T2, T3, T4, T5
+
+{ Calculate positions of nodes }
+x0 := 0      // Left boundary
+x1 := dx*1   // Node 1
+x2 := dx*2   // Node 2
+x3 := dx*3   // Node 3
+x4 := dx*4   // Node 4
+x5 := dx*5   // Node 5
+x6 := L      // Right boundary
+
+{ Analytical steady-state solution for comparison }
+T1_ss := T_left - (T_left - T_right) * x1/L
+T2_ss := T_left - (T_left - T_right) * x2/L
+T3_ss := T_left - (T_left - T_right) * x3/L
+T4_ss := T_left - (T_left - T_right) * x4/L
+T5_ss := T_left - (T_left - T_right) * x5/L
+
+{ Plot the results }
+PLOT t, T1, T2, T3, T4, T5 WITH TITLE "Heat Diffusion in Rod - Temperature vs Time" XLABEL "Time (s)" YLABEL "Temperature (°C)"

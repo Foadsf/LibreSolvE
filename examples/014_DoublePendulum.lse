@@ -1,0 +1,64 @@
+{ Test Case 014_DoublePendulum.lse }
+" Double Pendulum System - Chaotic Motion "
+" Demonstrates solving complex coupled ODEs in LibreSolvE "
+
+$IntegralAutoStep Vary=1 Min=50 Max=10000 Reduce=1e-5 Increase=1e-7
+
+{ System parameters }
+m1 := 1.0    "[kg]"    // Mass of first pendulum
+m2 := 1.0    "[kg]"    // Mass of second pendulum
+L1 := 1.0    "[m]"     // Length of first pendulum
+L2 := 1.0    "[m]"     // Length of second pendulum
+g := 9.81    "[m/s^2]" // Gravitational acceleration
+
+{ Initial conditions }
+theta1_initial := 90   "[deg]"  // Initial angle of first pendulum
+theta2_initial := 0    "[deg]"  // Initial angle of second pendulum
+omega1_initial := 0.0  "[rad/s]" // Initial angular velocity of first pendulum
+omega2_initial := 0.0  "[rad/s]" // Initial angular velocity of second pendulum
+
+{ Convert degrees to radians for calculations }
+theta1_rad_initial := theta1_initial * 3.14159/180
+theta2_rad_initial := theta2_initial * 3.14159/180
+
+{ Simulation parameters }
+t_sim := 10.0  "[s]"  // Simulation duration
+
+{ State variables in radians }
+{ θ₁, θ₂ - angles }
+{ ω₁, ω₂ - angular velocities }
+
+{ Simplified state equations for double pendulum }
+dtheta1_dt = omega1
+dtheta2_dt = omega2
+
+{ These equations are simplified approximations of the full non-linear equations }
+domega1_dt = -(g/L1)*SIN(theta1) - (m2/m1)*(L2/L1)*omega2^2*SIN(theta1-theta2)*COS(theta1-theta2) - (m2/m1)*(L2/L1)*(g/L2)*SIN(theta2)*COS(theta1-theta2)
+domega2_dt = -(g/L2)*SIN(theta2) + (L1/L2)*omega1^2*SIN(theta1-theta2)*COS(theta1-theta2) - (L1/L2)*(g/L1)*SIN(theta1)*COS(theta1-theta2)
+
+{ Solve the system of ODEs }
+theta1 = Integral(dtheta1_dt, t, 0, t_sim)
+theta2 = Integral(dtheta2_dt, t, 0, t_sim)
+omega1 = Integral(domega1_dt, t, 0, t_sim)
+omega2 = Integral(domega2_dt, t, 0, t_sim)
+
+{ Calculate positions for visualization }
+x1 := L1 * SIN(theta1)   "[m]"
+y1 := -L1 * COS(theta1)  "[m]"
+x2 := x1 + L2 * SIN(theta2)  "[m]"
+y2 := y1 - L2 * COS(theta2)  "[m]"
+
+{ Store results in Integral Table }
+$IntegralTable t, theta1, theta2, omega1, omega2, x1, y1, x2, y2
+
+{ Calculate energy components }
+KE1 := 0.5 * m1 * (L1 * omega1)^2  "[J]" // Kinetic energy of first pendulum
+KE2 := 0.5 * m2 * ((L1 * omega1)^2 + (L2 * omega2)^2 + 2*L1*L2*omega1*omega2*COS(theta1-theta2))  "[J]" // Kinetic energy of second pendulum
+PE1 := m1 * g * (y1 + L1)  "[J]" // Potential energy of first pendulum
+PE2 := m2 * g * (y2 + L1 + L2)  "[J]" // Potential energy of second pendulum
+E_total := KE1 + KE2 + PE1 + PE2  "[J]" // Total energy
+
+{ Plot the results }
+PLOT t, theta1*180/3.14159, theta2*180/3.14159 WITH TITLE "Double Pendulum Angles" XLABEL "Time (s)" YLABEL "Angle (deg)"
+PLOT x1, y1, x2, y2 WITH TITLE "Double Pendulum Trajectory" XLABEL "X Position (m)" YLABEL "Y Position (m)"
+PLOT t, E_total WITH TITLE "Double Pendulum Energy" XLABEL "Time (s)" YLABEL "Energy (J)"

@@ -1,0 +1,41 @@
+{ Test Case 012_RCCircuitResponse.lse }
+" RC Circuit Step Response "
+" Models: RC circuit with a step voltage input "
+" Demonstrates both analytical and numerical solutions "
+
+$IntegralAutoStep Vary=1 Min=10 Max=1000 Reduce=1e-3 Increase=1e-5
+
+{ Circuit Parameters }
+R := 10.0     "[kΩ]"   // Resistance
+C := 100.0    "[μF]"   // Capacitance
+tau := R*C    "[ms]"   // Time constant (R*C)
+V_in := 5.0   "[V]"    // Input voltage (step applied at t=0)
+
+{ State equation for capacitor voltage }
+{ dV/dt = (V_in - V)/τ }
+dV_dt = (V_in - V)/tau
+
+{ Simulation parameters }
+t_sim := 5*tau  "[ms]"  // Simulate for 5 time constants
+
+{ Solve the ODE }
+V = Integral(dV_dt, t, 0, t_sim)  // Solve for capacitor voltage
+
+{ Analytical solution }
+{ V(t) = V_in(1 - e^(-t/τ)) }
+V_analytical_0 := V_in*(1 - exp(-0/tau))
+V_analytical_1 := V_in*(1 - exp(-1*tau/tau))
+V_analytical_2 := V_in*(1 - exp(-2*tau/tau))
+V_analytical_3 := V_in*(1 - exp(-3*tau/tau))
+V_analytical_4 := V_in*(1 - exp(-4*tau/tau))
+V_analytical_5 := V_in*(1 - exp(-5*tau/tau))
+
+{ Current calculation }
+I := (V_in - V)/R    "[mA]"  // Ohm's law
+
+{ Create Integral Table }
+$IntegralTable t, V, I
+
+{ Plot the results }
+PLOT t, V WITH TITLE "RC Circuit Step Response - Voltage" XLABEL "Time (ms)" YLABEL "Voltage (V)"
+PLOT t, I WITH TITLE "RC Circuit Step Response - Current" XLABEL "Time (ms)" YLABEL "Current (mA)"

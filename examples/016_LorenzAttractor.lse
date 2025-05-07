@@ -1,0 +1,38 @@
+{ Test Case 016_LorenzAttractor.lse }
+" Lorenz Attractor - Famous Chaotic System "
+" Models the three coupled ODEs of the Lorenz system "
+" Demonstrates complex attractor formation "
+
+$IntegralAutoStep Vary=1 Min=100 Max=10000 Reduce=1e-5 Increase=1e-7
+
+{ System parameters }
+sigma := 10.0    // Prandtl number
+rho := 28.0      // Rayleigh number
+beta := 8.0/3.0  // Physical proportion related to domain geometry
+
+{ Initial conditions }
+x_initial := 1.0  // Initial x coordinate
+y_initial := 1.0  // Initial y coordinate
+z_initial := 1.0  // Initial z coordinate
+
+{ Define the Lorenz system state equations }
+dx_dt = sigma * (y - x)
+dy_dt = x * (rho - z) - y
+dz_dt = x * y - beta * z
+
+{ Simulation parameters }
+t_sim := 30.0  // Simulation duration
+
+{ Solve the ODEs }
+x = Integral(dx_dt, t, 0, t_sim)
+y = Integral(dy_dt, t, 0, t_sim)
+z = Integral(dz_dt, t, 0, t_sim)
+
+{ Store results in Integral Table }
+$IntegralTable t, x, y, z
+
+{ Plot the results }
+PLOT t, x WITH TITLE "Lorenz Attractor - X vs Time" XLABEL "Time" YLABEL "X Coordinate"
+PLOT t, y WITH TITLE "Lorenz Attractor - Y vs Time" XLABEL "Time" YLABEL "Y Coordinate"
+PLOT t, z WITH TITLE "Lorenz Attractor - Z vs Time" XLABEL "Time" YLABEL "Z Coordinate"
+PLOT x, z WITH TITLE "Lorenz Attractor - X-Z Projection" XLABEL "X Coordinate" YLABEL "Z Coordinate"

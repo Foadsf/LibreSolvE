@@ -1,0 +1,48 @@
+{ Test Case 011_SpringMassDamper.lse }
+" A classic spring-mass-damper system demonstrating second order ODE solving "
+" Models: m*d²x/dt² + c*dx/dt + k*x = 0 "
+" Converted to first-order system: dx/dt = v, dv/dt = -(k/m)*x - (c/m)*v "
+
+$IntegralAutoStep Vary=1 Min=10 Max=2000 Reduce=1e-3 Increase=1e-5
+
+{ System parameters }
+m := 1.0     "[kg]"   // Mass
+k := 10.0    "[N/m]"  // Spring constant
+c := 0.5     "[N·s/m]" // Damping coefficient
+
+{ Initial conditions }
+x_initial := 1.0  "[m]"    // Initial displacement
+v_initial := 0.0  "[m/s]"  // Initial velocity
+
+{ Define state equations }
+dx_dt = v                   // Position derivative equals velocity
+dv_dt = -(k/m)*x - (c/m)*v  // Acceleration equation from F=ma
+
+{ Simulation parameters }
+t_sim := 10.0  "[s]"  // Simulation duration
+
+{ Convert the second-order ODE to a system of first-order ODEs }
+x = Integral(dx_dt, t, 0, t_sim)  // Solve for position
+v = Integral(dv_dt, t, 0, t_sim)  // Solve for velocity
+
+{ Analytical solution for underdamped case }
+{ x(t) = A*exp(-ζωt)*cos(ωd*t - φ) where ωd = ω*sqrt(1-ζ²) }
+zeta := c/(2*sqrt(m*k))       // Damping ratio
+omega_n := sqrt(k/m)          // Natural frequency
+omega_d := omega_n*sqrt(1-zeta^2)  // Damped natural frequency
+A := x_initial                 // Amplitude
+phi := 0                       // Phase angle (zero for our initial conditions)
+
+{ Store the analytical solution at specific time points for verification }
+x_analytical_0 := A*exp(-zeta*omega_n*0)*cos(omega_d*0 - phi)
+x_analytical_2 := A*exp(-zeta*omega_n*2)*cos(omega_d*2 - phi)
+x_analytical_4 := A*exp(-zeta*omega_n*4)*cos(omega_d*4 - phi)
+x_analytical_6 := A*exp(-zeta*omega_n*6)*cos(omega_d*6 - phi)
+x_analytical_8 := A*exp(-zeta*omega_n*8)*cos(omega_d*8 - phi)
+x_analytical_10 := A*exp(-zeta*omega_n*10)*cos(omega_d*10 - phi)
+
+{ Create Integral Table to capture simulation results }
+$IntegralTable t, x, v
+
+{ Plot the results }
+PLOT t, x, v WITH TITLE "Spring-Mass-Damper System" XLABEL "Time (s)" YLABEL "Position (m), Velocity (m/s)"

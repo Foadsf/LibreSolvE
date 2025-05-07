@@ -1,0 +1,46 @@
+{ Test Case 013_PendulumWithUnits.lse }
+" Simple Pendulum with Units "
+" Models: d²θ/dt² + (g/L)*sin(θ) = 0 "
+" Demonstrates unit handling and non-linear ODE solution "
+
+$IntegralAutoStep Vary=1 Min=20 Max=5000 Reduce=1e-4 Increase=1e-6
+
+{ System parameters with units }
+L := 1.0     "[m]"                  // Pendulum length
+g := 9.81    "[m/s^2]"              // Gravitational acceleration
+g_moon := g * CONVERT('m/s^2', 'm/s^2') * 0.1655  "[m/s^2]"  // Moon gravity
+g_mars := g * CONVERT('m/s^2', 'm/s^2') * 0.3794  "[m/s^2]"  // Mars gravity
+
+{ Initial conditions }
+theta_initial := 30   "[deg]"        // Initial angle in degrees
+theta_rad_initial := theta_initial * CONVERT('deg', 'rad')  "[rad]"
+omega_initial := 0.0  "[rad/s]"      // Initial angular velocity
+
+{ Convert the second-order ODE to a system of first-order ODEs }
+{ d²θ/dt² + (g/L)*sin(θ) = 0 becomes: }
+{ dθ/dt = ω }
+{ dω/dt = -(g/L)*sin(θ) }
+
+{ Earth simulation }
+dtheta_dt = omega                    // Angular velocity
+domega_dt = -(g/L)*SIN(theta)        // Angular acceleration
+
+{ Simulation parameters }
+t_sim := 10.0  "[s]"                 // Simulation duration
+
+{ Solve the ODEs - Earth condition }
+theta = Integral(dtheta_dt, t, 0, t_sim)
+omega = Integral(domega_dt, t, 0, t_sim)
+
+{ Small angle approximation (analytical) - valid only for small angles }
+{ θ(t) = θ₀*cos(ωₙ*t) where ωₙ = sqrt(g/L) }
+omega_n := SQRT(g/L)  "[rad/s]"      // Natural frequency
+period := 2*3.14159/omega_n  "[s]"   // Period of oscillation
+theta_small_angle := theta_rad_initial*COS(omega_n*t)  "[rad]"
+theta_small_angle_deg := theta_small_angle * CONVERT('rad', 'deg')  "[deg]"
+
+{ Store results in Integral Table }
+$IntegralTable t, theta, omega, theta_small_angle
+
+{ Plot the results - in degrees for better readability }
+PLOT t, theta*CONVERT('rad', 'deg'), theta_small_angle_deg WITH TITLE "Pendulum Motion on Earth" XLABEL "Time (s)" YLABEL "Angle (deg)"
