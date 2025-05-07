@@ -22,8 +22,8 @@ public static class PlotExporter
             case PlotFormat.PNG:
             case PlotFormat.PDF:
             default:
-                // For formats other than SVG, warn and use SVG instead
-                Console.WriteLine($"Warning: {format} export not currently supported. Saving as SVG instead.");
+                // For formats other than SVG, save as SVG instead
+                Console.WriteLine($"Note: {format} export not currently supported. Saving as SVG instead.");
                 string svgPath = Path.ChangeExtension(outputPath, ".svg");
                 svgRenderer.SaveToFile(plotData, svgPath);
                 break;

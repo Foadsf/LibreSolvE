@@ -1,4 +1,4 @@
-﻿// LibreSolvE.CLI/Program.cs
+﻿// LibreSolvE.CLI/Program.cs - Complete rewrite with more robust console handling
 using System.CommandLine;
 using System.CommandLine.Builder;
 using System.CommandLine.Parsing;
@@ -104,21 +104,25 @@ class Program
         var exitCode = 0;
         var outputBuilder = new StringBuilder();
 
-        // Show title and version unless quiet mode
-        if (!quiet)
-        {
-            string version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.1.0";
-            AnsiConsole.Write(
-                new FigletText("LibreSolvE")
-                    .LeftJustified()
-                    .Color(Color.Green));
-            AnsiConsole.WriteLine($"Version {version}");
-            AnsiConsole.WriteLine();
-        }
+        // Capture all console output for the log file and redirect debug output
+        // to prevent it from showing in normal mode
+        TextWriter originalConsoleOut = Console.Out;
+        StringWriter logWriter = new StringWriter();
+        StringWriter debugWriter = new StringWriter();
 
         try
         {
-            // If no output file is specified, create one based on the input file name
+            // Show title and version unless quiet mode
+            if (!quiet)
+            {
+                string version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.1.0";
+
+                // Simple clean header
+                AnsiConsole.MarkupLine($"[green]LibreSolvE[/] v{version}");
+                AnsiConsole.WriteLine();
+            }
+
+            // Create default output file if none specified
             if (outputFile == null && !quiet)
             {
                 string outputPath = Path.Combine(
@@ -134,33 +138,58 @@ class Program
                 Environment.Exit(1);
             }
 
-            WriteOutput($"Processing file: {inputFile.FullName}", quiet, outputBuilder);
+            // Show filename
+            if (!quiet)
+            {
+                AnsiConsole.MarkupLine($"Processing: [cyan]{Path.GetFileName(inputFile.FullName)}[/]");
+            }
+
+            // Record full path in output log
+            logWriter.WriteLine($"Processing file: {inputFile.FullName}");
 
             if (!quiet)
             {
                 // Execute with spinner animation
                 AnsiConsole.Status()
-                    .Start("Processing input file...", ctx =>
+                    .Start("Solving...", ctx =>
                     {
                         ctx.Spinner(Spinner.Known.Dots);
                         ctx.SpinnerStyle(Style.Parse("green"));
 
-                        exitCode = ProcessFile(inputFile, solver, plotFormat, verbose, quiet, outputBuilder);
+                        // Redirect console output when not in verbose mode
+                        if (!verbose)
+                        {
+                            Console.SetOut(debugWriter);
+                        }
+
+                        exitCode = ProcessFile(inputFile, solver, plotFormat, verbose, quiet, logWriter);
+
+                        // Restore console output
+                        Console.SetOut(originalConsoleOut);
                     });
             }
             else
             {
                 // Process without spinner
-                exitCode = ProcessFile(inputFile, solver, plotFormat, verbose, quiet, outputBuilder);
+                // Redirect console output when not in verbose mode
+                if (!verbose)
+                {
+                    Console.SetOut(debugWriter);
+                }
+
+                exitCode = ProcessFile(inputFile, solver, plotFormat, verbose, quiet, logWriter);
+
+                // Restore console output
+                Console.SetOut(originalConsoleOut);
             }
 
             // Write output to file if requested
             if (outputFile != null && exitCode == 0)
             {
-                File.WriteAllText(outputFile.FullName, outputBuilder.ToString());
+                File.WriteAllText(outputFile.FullName, logWriter.ToString());
                 if (!quiet)
                 {
-                    AnsiConsole.MarkupLine($"[green]Results written to: {outputFile.FullName}[/]");
+                    AnsiConsole.MarkupLine($"Results written to: [blue]{outputFile.FullName}[/]");
                 }
             }
 
@@ -171,12 +200,20 @@ class Program
         }
         catch (Exception ex)
         {
+            // Restore console output in case of exception
+            Console.SetOut(originalConsoleOut);
+
             AnsiConsole.MarkupLine($"[red]Error: {ex.Message}[/]");
             if (verbose)
             {
                 AnsiConsole.WriteException(ex);
             }
             Environment.Exit(1);
+        }
+        finally
+        {
+            // Ensure console is restored
+            Console.SetOut(originalConsoleOut);
         }
 
         Environment.Exit(exitCode);
@@ -188,27 +225,24 @@ class Program
         PlotFormat plotFormat,
         bool verbose,
         bool quiet,
-        StringBuilder outputBuilder)
+        TextWriter logWriter)
     {
         try
         {
-            WriteOutput($"--- Reading file: {inputFile.FullName} ---", quiet, outputBuilder);
+            // Full output for file log
+            logWriter.WriteLine($"--- Reading file: {inputFile.FullName} ---");
             string inputText = File.ReadAllText(inputFile.FullName);
 
-            // 1. Parse Units *before* main parsing/execution
-            WriteOutput("--- Extracting units from source ---", quiet, outputBuilder);
-            // Use the static method from UnitParser
+            // 1. Parse Units
+            logWriter.WriteLine("--- Extracting units from source ---");
             var unitsDictionary = UnitParser.ExtractUnitsFromSource(inputText);
 
-            if (verbose)
+            if (unitsDictionary.Count > 0)
             {
-                WriteOutput($"Found {unitsDictionary.Count} variables with units specified.", quiet, outputBuilder);
-                if (unitsDictionary.Count > 0)
+                logWriter.WriteLine($"Found {unitsDictionary.Count} variables with units specified.");
+                foreach (var kvp in unitsDictionary)
                 {
-                    foreach (var kvp in unitsDictionary)
-                    {
-                        WriteOutput($"  {kvp.Key}: [{kvp.Value}]", quiet, outputBuilder);
-                    }
+                    logWriter.WriteLine($"  {kvp.Key}: [{kvp.Value}]");
                 }
             }
 
@@ -225,25 +259,29 @@ class Program
             parser.AddErrorListener(errorListener);
             lexer.AddErrorListener(errorListener);
 
-            WriteOutput("--- Parsing file content ---", quiet, outputBuilder);
+            logWriter.WriteLine("--- Parsing file content ---");
             EesParser.EesFileContext parseTreeContext = parser.eesFile();
-            WriteOutput("--- Parsing successful ---", quiet, outputBuilder);
+            logWriter.WriteLine("--- Parsing successful ---");
 
             // 3. Build Abstract Syntax Tree (AST)
-            WriteOutput("--- Building Abstract Syntax Tree (AST) ---", quiet, outputBuilder);
+            logWriter.WriteLine("--- Building Abstract Syntax Tree (AST) ---");
             var astBuilder = new AstBuilderVisitor();
             AstNode rootAstNode = astBuilder.VisitEesFile(parseTreeContext);
 
             if (rootAstNode is not EesFileNode fileNode)
             {
-                WriteOutput("--- AST Building FAILED: Root node is not the expected EesFileNode type ---", quiet, outputBuilder, forceOutput: true);
+                logWriter.WriteLine("--- AST Building FAILED: Root node is not the expected EesFileNode type ---");
+                if (!quiet)
+                {
+                    Console.WriteLine("AST Building FAILED: Root node is not the expected EesFileNode type");
+                }
                 return 1;
             }
 
-            WriteOutput($"--- AST Built Successfully ({fileNode.Statements.Count} statements found) ---", quiet, outputBuilder);
+            logWriter.WriteLine($"--- AST Built Successfully ({fileNode.Statements.Count} statements found) ---");
 
             // 4. Initialize Core Components
-            WriteOutput("--- Initializing Execution Environment ---", quiet, outputBuilder);
+            logWriter.WriteLine("--- Initializing Execution Environment ---");
             var variableStore = new VariableStore();
             var functionRegistry = new FunctionRegistry(); // Includes built-ins
             var solverSettings = new SolverSettings { SolverType = solverType };
@@ -254,7 +292,7 @@ class Program
             // 5. Create a statement executor and execute the statements
             var executor = new StatementExecutor(variableStore, functionRegistry, solverSettings);
 
-            // Hook up plot creation event if we need to handle plots
+            // Hook up plot creation event
             List<PlotData> generatedPlots = new List<PlotData>();
             executor.PlotCreated += (sender, plotData) =>
             {
@@ -267,35 +305,69 @@ class Program
                 var renderer = new SvgPlotRenderer();
                 renderer.SaveToFile(plotData, filename);
 
-                WriteOutput($"Plot saved to: {filename}", quiet, outputBuilder);
+                logWriter.WriteLine($"Plot saved to: {filename}");
+
+                if (!quiet)
+                {
+                    Console.WriteLine($"Plot saved to: {filename}");
+                }
             };
 
             // Execute statements
             executor.Execute(fileNode);
 
-            // Print variable state after assignments
-            WriteOutput("\n--- Variable Store State After Assignments ---", quiet, outputBuilder);
-            var variableStoreOutput = CaptureConsoleOutput(() => variableStore.PrintVariables());
-            WriteOutput(variableStoreOutput, quiet, outputBuilder);
+            // Capture variable state after assignments for logs
+            logWriter.WriteLine("\n--- Variable Store State After Assignments ---");
+            StringWriter varStateWriter = new StringWriter();
+            TextWriter originalOut = Console.Out;
+            Console.SetOut(varStateWriter);
+            variableStore.PrintVariables();
+            Console.SetOut(originalOut);
+            logWriter.WriteLine(varStateWriter.ToString());
 
             // 6. Solve Equations
-            WriteOutput("\n--- Equation Solving Phase ---", quiet, outputBuilder);
+            logWriter.WriteLine("\n--- Equation Solving Phase ---");
             bool solveSuccess = executor.SolveRemainingAlgebraicEquations();
 
             if (solveSuccess)
             {
-                WriteOutput("\n--- Solver Phase Completed Successfully ---", quiet, outputBuilder);
-                WriteOutput("\n--- Final Variable Store State ---", quiet, outputBuilder);
-                variableStoreOutput = CaptureConsoleOutput(() => variableStore.PrintVariables());
-                WriteOutput(variableStoreOutput, quiet, outputBuilder);
+                logWriter.WriteLine("\n--- Solver Phase Completed Successfully ---");
+
+                // Show results header
+                if (!quiet)
+                {
+                    Console.WriteLine("\n" + new string('=', 25) + " RESULTS " + new string('=', 25));
+                }
+
+                // Final variable state
+                logWriter.WriteLine("\n--- Final Variable Store State ---");
+                StringWriter finalStateWriter = new StringWriter();
+                Console.SetOut(finalStateWriter);
+                variableStore.PrintVariables();
+                Console.SetOut(originalOut);
+                string variableStoreOutput = finalStateWriter.ToString();
+                logWriter.WriteLine(variableStoreOutput);
+
+                // For console output, make it nicer in normal mode
+                if (!quiet)
+                {
+                    DisplayPlainVariableTable(variableStoreOutput);
+                }
 
                 // Handle plots
                 if (generatedPlots.Count > 0)
                 {
-                    WriteOutput($"\n--- Generated {generatedPlots.Count} plots ---", quiet, outputBuilder);
-                    for (int i = 0; i < generatedPlots.Count; i++)
+                    logWriter.WriteLine($"\n--- Generated {generatedPlots.Count} plots ---");
+
+                    if (!quiet)
                     {
-                        WriteOutput($"Plot {i + 1}: {generatedPlots[i].Settings.Title}", quiet, outputBuilder);
+                        Console.WriteLine($"\nGenerated {generatedPlots.Count} plots:");
+
+                        for (int i = 0; i < generatedPlots.Count; i++)
+                        {
+                            Console.WriteLine($"  Plot {i + 1}: {generatedPlots[i].Settings.Title}");
+                            logWriter.WriteLine($"Plot {i + 1}: {generatedPlots[i].Settings.Title}");
+                        }
                     }
                 }
 
@@ -303,57 +375,165 @@ class Program
             }
             else
             {
-                WriteOutput("\n--- Solver FAILED ---", quiet, outputBuilder, forceOutput: true);
-                WriteOutput("\n--- Variable Store State After Failed Solve Attempt ---", quiet, outputBuilder);
-                variableStoreOutput = CaptureConsoleOutput(() => variableStore.PrintVariables());
-                WriteOutput(variableStoreOutput, quiet, outputBuilder);
+                logWriter.WriteLine("\n--- Solver FAILED ---");
+                if (!quiet)
+                {
+                    Console.WriteLine("Solver FAILED");
+                }
+
+                logWriter.WriteLine("\n--- Variable Store State After Failed Solve Attempt ---");
+                StringWriter failedStateWriter = new StringWriter();
+                Console.SetOut(failedStateWriter);
+                variableStore.PrintVariables();
+                Console.SetOut(originalOut);
+                logWriter.WriteLine(failedStateWriter.ToString());
+
                 return 1; // Failure
             }
         }
         catch (ParsingException pEx)
         {
-            WriteOutput($"\n--- PARSING FAILED ---", quiet, outputBuilder, forceOutput: true);
-            WriteOutput(pEx.Message, quiet, outputBuilder, forceOutput: true);
+            logWriter.WriteLine("\n--- PARSING FAILED ---");
+            logWriter.WriteLine(pEx.Message);
+
+            if (!quiet)
+            {
+                Console.WriteLine("PARSING FAILED");
+                Console.WriteLine(pEx.Message);
+            }
+
             return 1;
         }
         catch (IOException ioEx)
         {
-            WriteOutput($"\n--- FILE ERROR ---", quiet, outputBuilder, forceOutput: true);
-            WriteOutput($"File access error: {ioEx.Message}", quiet, outputBuilder, forceOutput: true);
+            logWriter.WriteLine("\n--- FILE ERROR ---");
+            logWriter.WriteLine($"File access error: {ioEx.Message}");
+
+            if (!quiet)
+            {
+                Console.WriteLine("FILE ERROR");
+                Console.WriteLine($"File access error: {ioEx.Message}");
+            }
+
             return 1;
         }
         catch (Exception ex)
         {
-            WriteOutput($"\n--- UNEXPECTED ERROR ---", quiet, outputBuilder, forceOutput: true);
-            WriteOutput($"An unexpected error occurred: {ex.GetType().Name} - {ex.Message}", quiet, outputBuilder, forceOutput: true);
+            logWriter.WriteLine("\n--- UNEXPECTED ERROR ---");
+            logWriter.WriteLine($"An unexpected error occurred: {ex.GetType().Name} - {ex.Message}");
+
             if (verbose)
             {
-                WriteOutput(ex.StackTrace ?? "", quiet, outputBuilder);
+                logWriter.WriteLine(ex.StackTrace ?? "");
             }
+
+            if (!quiet)
+            {
+                Console.WriteLine("UNEXPECTED ERROR");
+                Console.WriteLine($"An unexpected error occurred: {ex.GetType().Name} - {ex.Message}");
+
+                if (verbose)
+                {
+                    Console.WriteLine(ex.StackTrace ?? "");
+                }
+            }
+
             return 1;
         }
     }
 
-    static string CaptureConsoleOutput(Action action)
+    // Simplified display method that doesn't rely on Spectre.Console table formatting
+    static void DisplayPlainVariableTable(string variableStoreOutput)
     {
-        // Capture console output from an action
-        var originalOut = Console.Out;
-        using var stringWriter = new StringWriter();
-        Console.SetOut(stringWriter);
+        // Parse the variable store output
+        var variables = new List<(string Name, string Value, string Units)>();
 
-        action();
-
-        Console.SetOut(originalOut);
-        return stringWriter.ToString();
-    }
-
-    static void WriteOutput(string message, bool quiet, StringBuilder builder, bool forceOutput = false)
-    {
-        builder.AppendLine(message);
-        if (!quiet || forceOutput)
+        var lines = variableStoreOutput.Split('\n');
+        foreach (var line in lines)
         {
-            Console.WriteLine(message);
+            if (line.StartsWith("  ") && !line.StartsWith("---") &&
+                !line.Contains("Variable Store") && !line.Contains("----") &&
+                !string.IsNullOrWhiteSpace(line) && line.Contains("="))
+            {
+                // Parse the line
+                var parts = line.Trim().Split(new[] { '=' }, 2);
+                if (parts.Length == 2)
+                {
+                    string varName = parts[0].Trim();
+                    string valueWithUnits = parts[1].Trim();
+
+                    // Extract the value (everything before any brackets)
+                    string value = valueWithUnits;
+                    string units = "";
+
+                    // Look for units in brackets
+                    int bracketStart = valueWithUnits.IndexOf('[');
+                    if (bracketStart >= 0)
+                    {
+                        int bracketEnd = valueWithUnits.IndexOf(']', bracketStart);
+                        if (bracketEnd > bracketStart)
+                        {
+                            units = valueWithUnits.Substring(bracketStart, bracketEnd - bracketStart + 1);
+                            value = valueWithUnits.Substring(0, bracketStart).Trim();
+                        }
+                    }
+
+                    // Remove the (explicit) part
+                    int parenPos = value.IndexOf('(');
+                    if (parenPos > 0)
+                    {
+                        value = value.Substring(0, parenPos).Trim();
+                    }
+
+                    variables.Add((varName, value, units));
+                }
+            }
         }
+
+        // If no variables found
+        if (variables.Count == 0)
+        {
+            Console.WriteLine("No variables found in results.");
+            return;
+        }
+
+        // Find the max width for each column
+        int nameWidth = variables.Max(v => v.Name.Length);
+        int valueWidth = variables.Max(v => v.Value.Length);
+        int unitsWidth = variables.Max(v => v.Units.Length);
+
+        // Ensure minimum widths
+        nameWidth = Math.Max(nameWidth, "Variable".Length);
+        valueWidth = Math.Max(valueWidth, "Value".Length);
+        unitsWidth = Math.Max(unitsWidth, "Units".Length);
+
+        // Add some padding
+        nameWidth += 2;
+        valueWidth += 2;
+        unitsWidth += 2;
+
+        // Calculate total width
+        int totalWidth = nameWidth + valueWidth + unitsWidth + 4; // 4 for the table borders
+
+        // Draw the header
+        Console.WriteLine("+" + new string('-', nameWidth) + "+" + new string('-', valueWidth) + "+" + new string('-', unitsWidth) + "+");
+        Console.WriteLine(
+            "| " + "Variable".PadRight(nameWidth - 1) +
+            "| " + "Value".PadRight(valueWidth - 1) +
+            "| " + "Units".PadRight(unitsWidth - 1) + "|");
+        Console.WriteLine("+" + new string('=', nameWidth) + "+" + new string('=', valueWidth) + "+" + new string('=', unitsWidth) + "+");
+
+        // Draw the rows
+        foreach (var (name, value, units) in variables)
+        {
+            Console.WriteLine(
+                "| " + name.PadRight(nameWidth - 1) +
+                "| " + value.PadRight(valueWidth - 1) +
+                "| " + units.PadRight(unitsWidth - 1) + "|");
+        }
+
+        // Draw the bottom
+        Console.WriteLine("+" + new string('-', nameWidth) + "+" + new string('-', valueWidth) + "+" + new string('-', unitsWidth) + "+");
     }
 
     static string GetPlotExtension(PlotFormat format)
@@ -365,16 +545,6 @@ class Program
             PlotFormat.PDF => ".pdf",
             _ => ".svg"
         };
-    }
-
-    private static void SavePlot(PlotData plotData, string outputDirectory, PlotFormat format)
-    {
-        string filename = Path.Combine(
-            outputDirectory,
-            $"plot_{DateTime.Now:yyyyMMdd_HHmmssfff}{GetPlotExtension(format)}");
-
-        // Use PlotExporter to save the plot in the desired format
-        PlotExporter.ExportToFormat(plotData, filename, format);
     }
 }
 
