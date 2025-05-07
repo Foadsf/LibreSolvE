@@ -1,0 +1,43 @@
+{ Test Case 022: ODE with post-integration analytical solution calculation }
+" Solves dy/dt = -2*t - 4*t*y with y(0)=0 using adaptive step size "
+" Calculates analytical solution in a separate step "
+
+$IntegralAutoStep Vary=1 Min=5 Max=2000 Reduce=1e-1 Increase=1e-3
+
+{ Define the state equation }
+dydt = -2*t - 4*t*y
+
+{ Define simulation parameters }
+t_sim := 2.5
+y_initial := 0
+num_points := 20  // Number of time points to display
+
+{ Solve the ODE using the Integral function }
+y = Integral(dydt, t, 0, t_sim)
+
+{ Store intermediate results }
+$IntegralTable t, y
+
+{ After integration, calculate analytical solution at each time point }
+" Post-processing to add analytical solution at each stored time point "
+" This approach may require more complex implementation in actual code "
+" This is a simplified representation of the concept "
+
+" We'll manually reference a few points to demonstrate the idea "
+t1 := 0.0
+y_analytical1 := -1/2 + exp(-2*t1^2)/2
+
+t2 := 0.5
+y_analytical2 := -1/2 + exp(-2*t2^2)/2
+
+t3 := 1.0
+y_analytical3 := -1/2 + exp(-2*t3^2)/2
+
+t4 := 1.5
+y_analytical4 := -1/2 + exp(-2*t4^2)/2
+
+t5 := 2.0
+y_analytical5 := -1/2 + exp(-2*t5^2)/2
+
+t6 := 2.5
+y_analytical6 := -1/2 + exp(-2*t6^2)/2

@@ -1,0 +1,21 @@
+{ Test Case 021: ODE with Analytical Solution using explicit := assignment }
+" Solves dy/dt = -2*t - 4*t*y with y(0)=0 using adaptive step size "
+" Uses explicit assignment operator := for analytical solution "
+
+$IntegralAutoStep Vary=1 Min=5 Max=2000 Reduce=1e-1 Increase=1e-3
+
+{ Define the state equation }
+dydt = -2*t - 4*t*y
+
+{ Define simulation parameters }
+t_sim := 2.5
+y_initial := 0
+
+{ Solve the ODE using the Integral function }
+y = Integral(dydt, t, 0, t_sim)
+
+{ Analytical solution using explicit assignment operator }
+y_analytical := -1/2 + exp(-2*t^2)/2
+
+{ Store results in Integral Table }
+$IntegralTable t, y, y_analytical

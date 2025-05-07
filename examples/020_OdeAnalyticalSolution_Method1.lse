@@ -1,0 +1,21 @@
+{ Test Case 020: ODE with Analytical Solution in IntegralTable }
+" Solves dy/dt = -2*t - 4*t*y with y(0)=0 using adaptive step size "
+" Ensures analytical solution is evaluated at each time step "
+
+$IntegralAutoStep Vary=1 Min=5 Max=2000 Reduce=1e-1 Increase=1e-3
+
+{ Define the state equation }
+dydt = -2*t - 4*t*y
+
+{ Define simulation parameters }
+t_sim := 2.5
+y_initial := 0
+
+{ Solve the ODE using the Integral function }
+y = Integral(dydt, t, 0, t_sim)
+
+{ Analytical solution defined to be evaluated at every integration step }
+y_analytical = -1/2 + exp(-2*t^2)/2
+
+{ Store results in Integral Table - explicitly including y_analytical }
+$IntegralTable t, y, y_analytical

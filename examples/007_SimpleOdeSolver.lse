@@ -11,6 +11,6 @@ t_sim := 2.5  // Simulation time
 y = Integral(dydt, t, 0, t_sim)  // Solve the ODE
 
 // Analytical solution for comparison
-y_analytical := -1/2 + exp(-2*t^2)/2
+y_analytical = -1/2 + exp(-2*t^2)/2
 
 $IntegralTable t, y, y_analytical
