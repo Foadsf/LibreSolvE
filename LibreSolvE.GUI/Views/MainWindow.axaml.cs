@@ -13,12 +13,6 @@ public partial class MainWindow : Window
         if (DataContext is MainWindowViewModel viewModel)
         {
             viewModel.SetWindow(this);
-
-            // Find the PlotView control and set the reference
-            if (this.FindControl<PlotView>("PlotView") is PlotView plotView)
-            {
-                viewModel.PlotView = plotView;
-            }
         }
     }
 }

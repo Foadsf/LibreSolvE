@@ -1,10 +1,12 @@
+ <!-- LibreSolvE.GUI/Views/MainWindow.axaml -->
 <Window xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="using:LibreSolvE.GUI.ViewModels"
+    xmlns:views="clr-namespace:LibreSolvE.GUI.Views"
+    xmlns:oxy="clr-namespace:OxyPlot.Avalonia;assembly=OxyPlot.Avalonia"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:views="clr-namespace:LibreSolvE.GUI.Views"
-    mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+    mc:Ignorable="d" d:DesignWidth="1024" d:DesignHeight="768"
     x:Class="LibreSolvE.GUI.Views.MainWindow"
     x:DataType="vm:MainWindowViewModel"
     Icon="/Assets/avalonia-logo.ico"
@@ -14,77 +16,111 @@
         <vm:MainWindowViewModel />
     </Design.DataContext>
 
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-
+    <DockPanel>
         <!-- Menu -->
-        <Menu Grid.Row="0">
+        <Menu DockPanel.Dock="Top">
             <MenuItem Header="_File">
-                <MenuItem Header="_Open" Command="{Binding OpenCommand}" />
+                <MenuItem Header="_Open..." Command="{Binding OpenCommand}" />
                 <MenuItem Header="_Save" Command="{Binding SaveCommand}" />
+                <MenuItem Header="_Save As..." Command="{Binding SaveAsCommand}" />
                 <Separator />
                 <MenuItem Header="_Exit" Command="{Binding ExitCommand}" />
             </MenuItem>
             <MenuItem Header="_Run">
                 <MenuItem Header="_Execute" Command="{Binding RunCommand}" />
             </MenuItem>
+            <!-- TODO: Add other EES menus: Edit, Options, Calculate, Tables, Plot, Windows, Help -->
         </Menu>
 
-        <!-- Main content -->
-        <SplitView Grid.Row="1" IsPaneOpen="True" DisplayMode="Inline" OpenPaneLength="300">
-            <!-- File editor panel -->
-            <SplitView.Pane>
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
+        <!-- Status Bar -->
+        <Border DockPanel.Dock="Bottom" Background="#EEE" Padding="5">
+            <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" />
+        </Border>
 
-                    <TextBlock Grid.Row="0" Text="Editor" Margin="5" FontWeight="Bold" />
-                    <TextBox Grid.Row="1" Text="{Binding FileContent}" AcceptsReturn="True"
-                        TextWrapping="Wrap" />
-                </Grid>
-            </SplitView.Pane>
+        <!-- Toolbar (Placeholder) -->
+        <Border DockPanel.Dock="Top" Background="#DDD" Padding="5" MinHeight="30">
+            <TextBlock Text="Toolbar Placeholder" VerticalAlignment="Center" />
+        </Border>
 
-            <!-- Results panel -->
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
+        <!-- Main Content Area -->
+        <!-- Using a Grid to simulate EES layout: Equations on left, Results/Plots on right -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="300" /> <!-- Equations -->
+                <ColumnDefinition Width="Auto" /> <!-- GridSplitter -->
+                <ColumnDefinition Width="2*" MinWidth="400" /> <!-- Results and Plots -->
+            </Grid.ColumnDefinitions>
 
-                <!-- Output text -->
-                <Grid Grid.Row="0">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
+            <!-- Equations Panel -->
+            <DockPanel Grid.Column="0">
+                <TextBlock DockPanel.Dock="Top" Text="Equations" Margin="5" FontWeight="Bold" />
+                <!-- This TextBox will be bound to MainWindowViewModel.EquationsVM.EquationText -->
+                <TextBox Text="{Binding EquationsVM.EquationText}"
+                    AcceptsReturn="True"
+                    TextWrapping="NoWrap"
+                    ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                    FontFamily="Consolas,Monospace"
+                    Margin="5" />
+            </DockPanel>
 
-                    <TextBlock Grid.Row="0" Text="Output" Margin="5" FontWeight="Bold" />
-                    <TextBox Grid.Row="1" Text="{Binding OutputText}" IsReadOnly="True"
-                        AcceptsReturn="True" TextWrapping="Wrap" />
-                </Grid>
+            <GridSplitter Grid.Column="1" Width="5" Background="LightGray"
+                HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
 
-                <!-- Plot view -->
-                <Grid Grid.Row="1">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
-                    <TextBlock Grid.Row="0" Text="Plot" Margin="5" FontWeight="Bold" />
-                    <views:PlotView Grid.Row="1" x:Name="PlotView" />
-                </Grid>
-            </Grid>
-        </SplitView>
-
-        <!-- Status bar -->
-        <Grid Grid.Row="2" Background="#F0F0F0">
-            <TextBlock Text="{Binding StatusText}" Margin="5" />
+            <!-- Right Panel: Results and Plots (Tabbed or Stacked) -->
+            <TabControl Grid.Column="2" Margin="5">
+                <TabItem Header="Solution">
+                    <Panel>
+                        <TextBlock Text="Solution / Output" Margin="5,5,5,0" FontWeight="Bold"
+                            DockPanel.Dock="Top" />
+                        <!-- DataGrid for structured solution -->
+                        <DataGrid ItemsSource="{Binding SolutionVM.Variables}" Margin="5"
+                            AutoGenerateColumns="False" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Variable" Binding="{Binding Name}"
+                                    Width="*" />
+                                <DataGridTextColumn Header="Value"
+                                    Binding="{Binding Value, StringFormat='N6'}" Width="*" />
+                                <DataGridTextColumn Header="Units" Binding="{Binding Units}"
+                                    Width="*" />
+                                <DataGridTextColumn Header="Source" Binding="{Binding Source}"
+                                    Width="Auto" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <!-- Fallback for raw text output if needed -->
+                        <!-- <TextBox Text="{Binding OutputText}" IsReadOnly="True" Margin="5"
+                        AcceptsReturn="True" TextWrapping="Wrap"
+                        VerticalScrollBarVisibility="Auto"/> -->
+                    </Panel>
+                </TabItem>
+                <TabItem Header="Plots">
+                    <!-- This will host one or more PlotViews. For simplicity, let's show the first
+                    plot. -->
+                    <!-- For multiple plots, a TabControl or ItemsControl within this TabItem would
+                    be needed. -->
+                    <ContentControl Content="{Binding PlotViewModels[0]}"
+                        IsVisible="{Binding PlotViewModels.Count}" />
+                    <!-- Or use an ItemsControl if you want to show all plots (e.g., stacked or in
+                    their own tabs) -->
+                    <!--
+                     <ItemsControl ItemsSource="{Binding PlotViewModels}">
+                         <ItemsControl.ItemTemplate>
+                             <DataTemplate>
+                                 <views:PlotView DataContext="{Binding}" Height="400" Margin="5"/>
+                             </DataTemplate>
+                         </ItemsControl.ItemTemplate>
+                     </ItemsControl>
+                     -->
+                </TabItem>
+                <TabItem Header="Raw Output">
+                    <TextBox Text="{Binding OutputText}" IsReadOnly="True" Margin="5"
+                        AcceptsReturn="True" TextWrapping="Wrap"
+                        ScrollViewer.VerticalScrollBarVisibility="Auto"
+                        FontFamily="Consolas,Monospace" />
+                </TabItem>
+                <!-- TODO: Add tabs for Parametric Table, Lookup Table, Arrays, Residuals, Formatted
+                Equations etc. -->
+            </TabControl>
         </Grid>
-    </Grid>
+    </DockPanel>
 </Window>
