@@ -1,8 +1,8 @@
 # LibreSolvE
 
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL_v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
-[![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen)]() <!-- Replace with actual CI badge later -->
-[![Current Version](https://img.shields.io/badge/Version-0.2.0--alpha-orange)]() <!-- Updated version -->
+[![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen)]()
+[![Current Version](https://img.shields.io/badge/Version-0.3.0--alpha-orange)]()
 
 **LibreSolvE** is a Free, Libre, and Open Source Software (FLOSS) project aiming to provide a powerful and flexible environment for solving systems of algebraic equations, particularly inspired by the syntax and functionality of the popular Engineering Equation Solver (EES). Built using modern C# and .NET with the robust ANTLR parser generator, LibreSolvE is designed for engineers, scientists, students, and educators who need a reliable, cross-platform tool for numerical analysis and simulation.
 
@@ -30,17 +30,17 @@ LibreSolvE aims to fill this gap by providing a FLOSS alternative that:
 
 *   **Mimics EES Syntax:** Strives for high compatibility with the familiar EES language structure for equations, assignments, comments, and eventually functions, procedures, and directives.
 *   **Is Cross-Platform:** Built on .NET, enabling it to run on Windows, macOS, and Linux.
-*   **Is Extensible:** Designed with a core solving engine and distinct interfaces (CLI, planned TUI/GUI).
-*   **Leverages FLOSS Libraries:** Integrates powerful libraries like ANTLR for parsing and MathNet.Numerics for numerical computations, promoting robustness and avoiding reinvention.
+*   **Is Extensible:** Designed with a core solving engine and distinct interfaces (CLI, TUI, and GUI).
+*   **Leverages FLOSS Libraries:** Integrates powerful libraries like ANTLR for parsing, MathNet.Numerics for numerical computations, and UnitsNet for unit conversions.
 
-This project is currently in the **alpha stage**, focusing on core parsing, solving capabilities, and built-in functions via a Command Line Interface (CLI).
+This project is currently in the **alpha stage**, focusing on core parsing, solving capabilities, built-in functions, and ODE integration, with Command Line Interface (CLI), Terminal UI (TUI), and preliminary GUI support.
 
 ## Goals
 
 *   Provide a robust engine for solving systems of non-linear algebraic equations.
 *   Achieve a high degree of syntax compatibility with EES input files.
 *   Integrate comprehensive thermophysical property calculations (planned via CoolProp).
-*   Support unit checking and conversions (planned via UnitsNet).
+*   Support unit checking and conversions (via UnitsNet).
 *   Offer multiple user interfaces: CLI, TUI (Terminal UI), and GUI (Graphical UI).
 *   Maintain clear, well-documented, and testable code.
 *   Be a community-driven, permissively licensed FLOSS project.
@@ -76,6 +76,12 @@ This project is currently in the **alpha stage**, focusing on core parsing, solv
     *   Executes assignments to populate a variable store.
     *   Collects equations requiring simultaneous solution.
 
+*   **ODE Integration:**
+    *   Supports solving Ordinary Differential Equations with the `Integral` function
+    *   Provides both fixed step-size and adaptive step-size algorithms
+    *   Includes `$IntegralTable` directive for storing and displaying integration results
+    *   Allows custom control of integration parameters with `$IntegralAutoStep` directive
+
 *   **Solving:**
     *   Uses MathNet.Numerics library for solving systems of non-linear equations.
     *   Employs derivative-free Nelder-Mead simplex optimizer to find solutions minimizing the sum of squared residuals.
@@ -84,10 +90,10 @@ This project is currently in the **alpha stage**, focusing on core parsing, solv
     *   Handles basic square systems and warns about under/overdetermined systems.
     *   Supports guess values for better convergence.
 
-*   **Unit Support:**
-    *   Basic parsing of unit annotations from comments and brackets (e.g., `"[m]"`, `"[J/kg-K]"`).
-    *   Display of units alongside variable values in output.
-    *   Framework for future unit compatibility checking.
+*   **Plotting:**
+    *   Basic plotting support through `PLOT` command
+    *   SVG output for visualization
+    *   Customizable labels, titles, and plot parameters
 
 *   **CLI (`lse`):**
     *   Takes an input `.lse` file path as an argument.
@@ -95,10 +101,21 @@ This project is currently in the **alpha stage**, focusing on core parsing, solv
     *   Outputs processing steps, results, and variable store contents to the console.
     *   Returns non-zero exit code on failure.
 
+*   **TUI:**
+    *   Provides a text-based user interface via Terminal.Gui
+    *   File browser for selecting and editing `.lse` files
+    *   Displays execution results and variable values
+
+*   **GUI (Preliminary):**
+    *   Basic Avalonia-based graphical interface
+    *   Editor for `.lse` files
+    *   Results display and visualization
+
 *   **Build System:** Includes batch scripts (`build_run.bat`, `run_cli.bat`) for automated cleaning, building, and running of examples on Windows, including temporary Java environment setup for ANTLR tasks.
 
 ## Planned Features
 
+*   **ODE Integration Improvements:** Better integration with analytical solutions and debugging tools.
 *   **Unit Handling Improvements:** Complete unit conversion and compatibility checking using UnitsNet.
 *   **Thermophysical Properties:** Integration with CoolProp library for a wide range of fluids.
 *   **Solver Enhancements:**
@@ -109,8 +126,8 @@ This project is currently in the **alpha stage**, focusing on core parsing, solv
 *   **Advanced Syntax:** Arrays, `DUPLICATE`, `SUM`/`PRODUCT`, complex numbers, strings, directives (`$INCLUDE`, `$COMMON`, etc.).
 *   **User Code:** `FUNCTION`, `PROCEDURE`, `MODULE` support.
 *   **Tables:** Parametric, Lookup (with interpolation), Arrays, Integral tables.
-*   **Diagram Window Features:** (Long term goal for GUI).
-*   **Interfaces:** Terminal UI (TUI) and Graphical UI (GUI) using Avalonia.
+*   **Diagram Window Features:** Enhanced plotting and visualization options.
+*   **Interfaces:** Improved Terminal UI (TUI) and Graphical UI (GUI) using Avalonia.
 *   **Comprehensive Testing:** Unit, integration, and syntax compatibility tests.
 *   **Cross-Platform Build/Run Scripts.**
 
@@ -150,6 +167,10 @@ This project is currently in the **alpha stage**, focusing on core parsing, solv
 3.  **Run directly via `dotnet run`:**
     ```cmd
     dotnet run --project LibreSolvE.CLI\LibreSolvE.CLI.csproj -- examples\your_file.lse
+    ```
+4.  **Run the Terminal UI:**
+    ```cmd
+    run_tui.bat
     ```
 
 ## Syntax Example
@@ -200,6 +221,27 @@ h := L * (1 - COS(theta_rad)) "[m]"  // Height at maximum swing
 v_max^2 = 2 * g * h  // Maximum velocity equation
 ```
 
+### ODE Example (ode_example.lse)
+
+```ees
+{ Simple ODE Example - dy/dt + 4*t*y = -2*t }
+{ with initial condition y = 0 at t = 0 }
+
+$IntegralAutoStep Vary=1 Min=5 Max=2000 Reduce=1e-1 Increase=1e-3
+
+// Define the state equation
+dydt + 4*t*y = -2*t  // State equation in standard form
+
+// Run the simulation
+t_sim := 2.5  // Simulation time
+y = Integral(dydt, t, 0, t_sim)  // Solve the ODE
+
+// Analytical solution for comparison
+y_analytical = -1/2 + exp(-2*t^2)/2
+
+$IntegralTable t, y, y_analytical
+```
+
 ## Project Structure
 
 ```
@@ -207,37 +249,23 @@ LibreSolvE/
 ├── .git/                 # Git repository data
 ├── .gitignore            # Files ignored by Git
 ├── examples/             # Example .lse input files
-│   ├── test.lse
-│   ├── test2.lse
-│   └── functions_test.lse
+│   ├── 000_JustAssignments.lse
+│   ├── 001_BasicEquationsMixed.lse
+│   └── ...
 ├── logs/                 # Log files (gitignored)
 │   └── build_run_...txt
-├── LibreSolvE.Core/      # Core library project (parsing, AST, evaluation, solving)
+├── LibreSolvE.Core/      # Core library project
 │   ├── Ast/              # Abstract Syntax Tree node classes
-│   │   ├── AssignmentNode.cs
-│   │   ├── BinaryOperationNode.cs
-│   │   ├── EquationNode.cs
-│   │   ├── FunctionCallNode.cs
-│   │   └── ...
 │   ├── Evaluation/       # Classes for evaluation and solving
-│   │   ├── EquationSolver.cs
-│   │   ├── ExpressionEvaluatorVisitor.cs
-│   │   ├── FunctionRegistry.cs
-│   │   ├── SolverFactory.cs
-│   │   ├── SolverSettings.cs
-│   │   ├── UnitParser.cs
-│   │   └── VariableStore.cs
 │   ├── Grammar/          # ANTLR .g4 grammar files
-│   │   ├── EesLexer.g4
-│   │   └── EesParser.g4
 │   ├── Parsing/          # ANTLR visitor for AST building
-│   │   └── AstBuilderVisitor.cs
-│   └── LibreSolvE.Core.csproj
+│   └── Plotting/         # Plotting services
 ├── LibreSolvE.CLI/       # Command Line Interface project
-│   ├── LibreSolvE.CLI.csproj
-│   └── Program.cs
+├── LibreSolvE.TUI/       # Terminal User Interface project
+├── LibreSolvE.GUI/       # Graphical User Interface project
 ├── build_run.bat         # Windows build & run script
 ├── run_cli.bat           # CLI execution script
+├── run_tui.bat           # TUI execution script
 ├── LibreSolvE.sln        # Visual Studio Solution file
 ├── global.json           # .NET SDK version configuration
 └── README.md             # This file
@@ -267,5 +295,5 @@ This license allows linking LibreSolvE's core library with other applications (i
 *   Inspired by the functionality and syntax of **Engineering Equation Solver (EES)**.
 *   Utilizes the powerful **ANTLR 4** parser generator.
 *   Leverages the **MathNet.Numerics** library for numerical computations.
+*   Uses **UnitsNet** for unit handling.
 *   (Planned) Integration with **CoolProp** for thermophysical properties.
-*   (Planned) Integration with **UnitsNet** for unit handling.
