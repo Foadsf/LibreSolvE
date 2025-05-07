@@ -74,8 +74,11 @@
                         <TextBlock Text="Solution / Output" Margin="5,5,5,0" FontWeight="Bold"
                             DockPanel.Dock="Top" />
                         <!-- DataGrid for structured solution -->
-                        <DataGrid ItemsSource="{Binding SolutionVM.Variables}" Margin="5"
-                            AutoGenerateColumns="False" IsReadOnly="True">
+                        <DataGrid x:Name="SolutionDataGrid"
+                            ItemsSource="{Binding SolutionVM.Variables}"
+                            Margin="5"
+                            AutoGenerateColumns="False"
+                            IsReadOnly="True">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Variable" Binding="{Binding Name}"
                                     Width="*" />

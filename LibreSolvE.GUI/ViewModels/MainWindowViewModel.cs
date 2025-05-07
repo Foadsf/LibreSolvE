@@ -136,9 +136,17 @@ namespace LibreSolvE.GUI.ViewModels
         }
 
 
-        public void SetWindow(Avalonia.Controls.Window window) // Fix: Use fully qualified Window type
+        public void SetWindow(Avalonia.Controls.Window window)
         {
-            _window = window;
+            if (window != null)
+            {
+                _window = window;
+                StatusText = "Ready - Window reference set";
+            }
+            else
+            {
+                StatusText = "Error: Window reference is null";
+            }
         }
 
         private async Task OpenFileAsync()
@@ -321,8 +329,24 @@ namespace LibreSolvE.GUI.ViewModels
                     LogCaptured(capturedConsoleWriter, $"Algebraic solve attempt {(solveSuccess ? "succeeded" : "failed")}.\n");
 
                     // 7. Update UI
-                    SolutionVM.UpdateResults(variableStore);
-                    StatusText = solveSuccess ? "Execution complete. Solver converged." : "Execution complete. Solver did NOT converge or no algebraic equations to solve.";
+                    try
+                    {
+                        // After solving
+                        SolutionVM.UpdateResults(variableStore);
+
+                        // Add debug output
+                        Debug.WriteLine($"Updated SolutionVM with {variableStore.GetAllVariableNames().Count()} variables");
+                        foreach (var varName in variableStore.GetAllVariableNames())
+                        {
+                            Debug.WriteLine($"  {varName} = {variableStore.GetVariable(varName)}");
+                        }
+
+                        StatusText = solveSuccess ? "Execution complete. Solver converged." : "Execution complete. Solver did NOT converge or no algebraic equations to solve.";
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error updating solution view: {ex.Message}");
+                    }
 
                     // Any plots generated during _executor.Execute (e.g., from $IntegralTable)
                     // would have been handled by OnPlotCreated.

@@ -1,6 +1,9 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using LibreSolvE.Core.Evaluation; // For VariableStore
+using System;
+using System.Collections.Generic; // Add this for List<T>
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 
 namespace LibreSolvE.GUI.ViewModels
@@ -31,27 +34,51 @@ namespace LibreSolvE.GUI.ViewModels
 
         public void UpdateResults(VariableStore store)
         {
-            Variables.Clear();
             if (store == null) return;
+
+            // Create a temporary list to hold all items before updating the observable collection
+            var newItems = new List<VariableResultItem>();
 
             var allVarNames = store.GetAllVariableNames().OrderBy(name => name);
             foreach (var varName in allVarNames)
             {
                 string source;
                 if (store.IsExplicitlySet(varName)) source = "Explicit";
-                else if (store.HasVariable(varName)) source = "Solved"; // Assuming if not explicit, it's solved or from guess
+                else if (store.HasVariable(varName)) source = "Solved";
                 else if (store.HasGuessValue(varName)) source = "Guess";
                 else source = "Default";
 
-
-                Variables.Add(new VariableResultItem
+                try
                 {
-                    Name = varName,
-                    Value = store.GetVariable(varName), // GetVariable handles default/guess internally if not solved
-                    Units = store.GetUnit(varName),
-                    Source = source
-                });
+                    double value = store.GetVariable(varName);
+                    string units = store.GetUnit(varName);
+
+                    newItems.Add(new VariableResultItem
+                    {
+                        Name = varName,
+                        Value = value,
+                        Units = units,
+                        Source = source
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error getting value for variable {varName}: {ex.Message}");
+                }
             }
+
+            // Update the UI on the UI thread - fix the delegate reference
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                Variables.Clear();
+                foreach (var item in newItems)
+                {
+                    Variables.Add(item);
+                }
+
+                // Debug output to confirm data was added
+                Debug.WriteLine($"Added {newItems.Count} variables to solution view");
+            });
         }
     }
 }

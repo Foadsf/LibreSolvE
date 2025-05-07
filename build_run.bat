@@ -115,7 +115,8 @@ for %%F in ("%EXAMPLE_DIR%\*.lse") do (
     set "LOG_FILE=%LOG_DIR%\run_!PADDED_COUNT!_%%~nxF.txt"
 
     REM --- Run the test and capture output ---
-    dotnet run --project LibreSolvE.CLI\LibreSolvE.CLI.csproj -- "%%F" > "!LOG_FILE!" 2>&1
+    REM --- Update this line to use the correct CLI parameters ---
+    dotnet run --project LibreSolvE.CLI\LibreSolvE.CLI.csproj -- --input-file "%%F" --verbose > "!LOG_FILE!" 2>&1
 
     REM --- Check result ---
     if errorlevel 1 (

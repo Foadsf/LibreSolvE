@@ -524,17 +524,20 @@ public class StatementExecutor
             if (node == null) return false;
 
             if (node is VariableNode vn)
-                return vn.Name != null && vn.Name.ToLowerInvariant().Contains("dydt");
+                // Fix for warning on line 530: Add null check for vn.Name
+                return !string.IsNullOrEmpty(vn.Name) && vn.Name.ToLowerInvariant().Contains("dydt");
 
             if (node is BinaryOperationNode bon)
-                return (bon.Left != null && hasDydt(bon.Left)) ||
-                       (bon.Right != null && hasDydt(bon.Right));
+                // Fix for warnings on lines 531 and 534: Simplify the logic to avoid null checking
+                return hasDydt(bon.Left) || hasDydt(bon.Right);
 
-            if (node is FunctionCallNode fcn && fcn.Arguments != null)
-                return fcn.Arguments.Any(a => a != null && hasDydt(a));
+            if (node is FunctionCallNode fcn)
+                // The Arguments property is already non-nullable, just check if it has any elements
+                return fcn.Arguments.Any(a => hasDydt(a));
 
             return false;
         };
+
         return hasDydt(eq.LeftHandSide) || hasDydt(eq.RightHandSide);
     }
 

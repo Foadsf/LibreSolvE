@@ -20,13 +20,20 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            // Avoid duplicate validations from both Avalonia and the CommunityToolkit. 
-            // More info: https://docs.avaloniaui.net/docs/guides/development-guides/data-validation#manage-validationplugins
-            DisableAvaloniaDataAnnotationValidation();
-            desktop.MainWindow = new MainWindow
+            // Create a ViewModel instance first
+            var viewModel = new MainWindowViewModel();
+
+            // Create the window and set its DataContext
+            var mainWindow = new MainWindow
             {
-                DataContext = new MainWindowViewModel(),
+                DataContext = viewModel
             };
+
+            // Set the window reference explicitly
+            viewModel.SetWindow(mainWindow);
+
+            // Set the desktop's MainWindow
+            desktop.MainWindow = mainWindow;
         }
 
         base.OnFrameworkInitializationCompleted();
