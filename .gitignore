@@ -88,3 +88,6 @@ Result/
 
 # others
 repomix-output.xml
+
+# Generated SVG plot files
+plot_*.svg

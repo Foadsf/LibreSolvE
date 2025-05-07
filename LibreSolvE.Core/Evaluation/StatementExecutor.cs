@@ -127,6 +127,8 @@ public class StatementExecutor
         Console.WriteLine("--- Statement Processing Finished ---");
     }
 
+    // StatementExecutor.cs - CategorizeStatements method modification
+
     private void CategorizeStatements(EesFileNode fileNode)
     {
         Console.WriteLine("--- Pre-processing Statements: Categorizing ---");
@@ -159,15 +161,21 @@ public class StatementExecutor
                 case EquationNode eqNode:
                     // First, check if it's an Integral Definition like "y = INTEGRAL(...)"
                     if (eqNode.LeftHandSide is VariableNode depVarNode &&
-                        eqNode.RightHandSide is FunctionCallNode rhsFuncCall && // Renamed here
-                        string.Equals(rhsFuncCall.FunctionName, "INTEGRAL", StringComparison.OrdinalIgnoreCase)) // Use renamed variable
+                        eqNode.RightHandSide is FunctionCallNode rhsFuncCall &&
+                        string.Equals(rhsFuncCall.FunctionName, "INTEGRAL", StringComparison.OrdinalIgnoreCase))
                     {
-                        // This is an EquationNode that represents an Integral definition.
-                        // We need to treat it like an AssignmentNode for consistent handling.
                         // Create a pseudo-AssignmentNode for consistent handling.
-                        var integralAssignNode = new AssignmentNode(depVarNode, rhsFuncCall); // Use renamed variable
+                        var integralAssignNode = new AssignmentNode(depVarNode, rhsFuncCall);
                         _integralDefinitions.Add(integralAssignNode);
                         Console.WriteLine($"Debug: Categorized Integral Definition (from EquationNode): {eqNode}");
+                    }
+                    // NEW: Check if it's a state equation with dydt
+                    else if ((eqNode.LeftHandSide is VariableNode lhsVarNode &&
+                              lhsVarNode.Name.ToLowerInvariant().Contains("dydt")) ||
+                            (IsDydtEquation(eqNode)))
+                    {
+                        _odeStateEquations.Add(eqNode);
+                        Console.WriteLine($"Debug: Categorized ODE State Equation: {eqNode}");
                     }
                     // Else, proceed with existing logic for potential assignments / algebraic equations
                     else
@@ -223,6 +231,30 @@ public class StatementExecutor
         }
     }
 
+    // Helper method to detect if an equation is related to dydt
+    private bool IsDydtEquation(EquationNode eqNode)
+    {
+        // Check if the equation involves a dydt variable anywhere
+        return ContainsDerivativeTerms(eqNode.LeftHandSide) || ContainsDerivativeTerms(eqNode.RightHandSide);
+    }
+
+    // Helper method to check if an expression contains derivative terms
+    private bool ContainsDerivativeTerms(ExpressionNode node)
+    {
+        switch (node)
+        {
+            case VariableNode varNode:
+                return varNode.Name.ToLowerInvariant().Contains("dydt") ||
+                      varNode.Name.ToLowerInvariant().Contains("d") && varNode.Name.ToLowerInvariant().Contains("dt");
+            case BinaryOperationNode binOpNode:
+                return ContainsDerivativeTerms(binOpNode.Left) || ContainsDerivativeTerms(binOpNode.Right);
+            case FunctionCallNode funcNode:
+                return funcNode.Arguments.Any(arg => ContainsDerivativeTerms(arg));
+            default:
+                return false;
+        }
+    }
+
     private void ProcessDirectives()
     {
         Console.WriteLine("--- Processing Directives ---");
@@ -270,6 +302,8 @@ public class StatementExecutor
     }
 
 
+    // StatementExecutor.cs - ExecutePotentialAssignments method modification
+
     private void ExecutePotentialAssignments()
     {
         Console.WriteLine("--- Processing Potential Assignments (Var = ConstExpr) ---");
@@ -277,10 +311,20 @@ public class StatementExecutor
         // This list will hold equations that were initially thought to be potential assignments
         // but, upon re-evaluation, are found to depend on unknowns.
         List<EquationNode> toReCategorizeAsAlgebraic = new List<EquationNode>();
+        List<EquationNode> toReCategorizeAsOdeState = new List<EquationNode>();
         List<EquationNode> successfullyAssigned = new List<EquationNode>();
 
         foreach (var eqNode in _potentialAssignments)
         {
+            // Check if this is actually a state equation with dydt that was miscategorized
+            if (eqNode.LeftHandSide is VariableNode lhsVarNode &&
+                lhsVarNode.Name.ToLowerInvariant().Contains("dydt"))
+            {
+                toReCategorizeAsOdeState.Add(eqNode);
+                Console.WriteLine($"Debug: Recategorizing potential assignment '{eqNode}' to ODE state equation.");
+                continue;
+            }
+
             var variableNode = (VariableNode)eqNode.LeftHandSide; // This cast is safe due to categorization logic
 
             // Use the strict IsConstantValue to ensure RHS is truly assignable now
@@ -292,15 +336,24 @@ public class StatementExecutor
             }
             else
             {
+                // If it involves dydt, recategorize as ODE state
+                if (ContainsDerivativeTerms(eqNode.LeftHandSide) || ContainsDerivativeTerms(eqNode.RightHandSide))
+                {
+                    toReCategorizeAsOdeState.Add(eqNode);
+                    Console.WriteLine($"Debug: Recategorizing potential assignment '{eqNode}' to ODE state equation due to derivative terms.");
+                }
                 // If it's not a true constant assignment now (e.g., depended on a variable
                 // that is still an unknown for the algebraic solver), it should be an algebraic equation.
-                Console.WriteLine($"Debug: RHS for potential assignment '{eqNode}' still depends on unknowns or was not constant. Re-categorizing to algebraic.");
-                toReCategorizeAsAlgebraic.Add(eqNode);
+                else
+                {
+                    Console.WriteLine($"Debug: RHS for potential assignment '{eqNode}' still depends on unknowns or was not constant. Re-categorizing to algebraic.");
+                    toReCategorizeAsAlgebraic.Add(eqNode);
+                }
             }
         }
 
         // Update the _potentialAssignments list to remove those that were re-categorized or assigned
-        // And add the re-categorized ones to _algebraicEquations
+        // And add the re-categorized ones to _algebraicEquations or _odeStateEquations
         foreach (var eq in successfullyAssigned)
         {
             _potentialAssignments.Remove(eq);
@@ -311,6 +364,14 @@ public class StatementExecutor
             if (!_algebraicEquations.Contains(eq)) // Avoid duplicates if somehow already there
             {
                 _algebraicEquations.Add(eq);
+            }
+        }
+        foreach (var eq in toReCategorizeAsOdeState)
+        {
+            _potentialAssignments.Remove(eq);
+            if (!_odeStateEquations.Contains(eq)) // Avoid duplicates if somehow already there
+            {
+                _odeStateEquations.Add(eq);
             }
         }
     }
@@ -457,12 +518,15 @@ public class StatementExecutor
         // A simple heuristic: does it contain "dydt" or similar?
         // This could be improved by checking if any variable in the equation
         // is used as the first argument to an INTEGRAL function.
-        Func<AstNode, bool> hasDydt = null;
+        Func<AstNode, bool>? hasDydt = null;
         hasDydt = (node) =>
         {
+            if (node == null) return false;
             if (node is VariableNode vn && vn.Name.ToLowerInvariant().Contains("dydt")) return true;
-            if (node is BinaryOperationNode bon) return hasDydt(bon.Left) || hasDydt(bon.Right);
-            if (node is FunctionCallNode fcn) return fcn.Arguments.Any(a => hasDydt(a));
+            if (node is BinaryOperationNode bon)
+                return (bon.Left != null && hasDydt(bon.Left)) || (bon.Right != null && hasDydt(bon.Right));
+            if (node is FunctionCallNode fcn)
+                return fcn.Arguments != null && fcn.Arguments.Any(a => a != null && hasDydt(a));
             return false;
         };
         return hasDydt(eq.LeftHandSide) || hasDydt(eq.RightHandSide);
@@ -534,7 +598,7 @@ public class StatementExecutor
             }
         }
 
-        string columnsString = string.Empty;
+        string? columnsString = string.Empty;
         if (match.Groups[3].Success)
         { // If there was a comma and potentially more columns
             columnsString = match.Groups[3].Value;

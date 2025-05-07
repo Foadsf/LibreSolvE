@@ -40,6 +40,16 @@ public class EquationSolver
         IdentifyVariablesToSolve();
     }
 
+    public EquationSolver(VariableStore variableStore, FunctionRegistry functionRegistry, List<EquationNode> equations, SolverSettings settings, List<string> forcedVariablesToSolve)
+    : this(variableStore, functionRegistry, equations, settings)
+    {
+        _variablesToSolve = forcedVariablesToSolve ?? throw new ArgumentNullException(nameof(forcedVariablesToSolve));
+
+        Console.WriteLine($"--- Solver using forced variable list ({_variablesToSolve.Count}): ---");
+        if (_variablesToSolve.Count > 0) Console.WriteLine(string.Join(", ", _variablesToSolve));
+        Console.WriteLine("--------------------------------------------------");
+    }
+
     private void IdentifyVariablesToSolve()
     {
         var allVarsInEquations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

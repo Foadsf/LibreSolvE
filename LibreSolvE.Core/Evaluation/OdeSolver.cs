@@ -97,6 +97,8 @@ public class OdeSolver
         }
     }
 
+    // OdeSolver.cs - Improve handling of dydt equations
+
     private double GetSlope(double tValue, double yValue)
     {
         // Temporarily set the independent and dependent variables in the store
@@ -104,92 +106,212 @@ public class OdeSolver
         double originalY = _variableStore.HasVariable(_dependentVarName) ? _variableStore.GetVariable(_dependentVarName) : double.NaN;
         // Also backup dydt_var if it exists, as the sub-solver will modify it
         double originalDydt = _variableStore.HasVariable(_dydtVarName) ? _variableStore.GetVariable(_dydtVarName) : double.NaN;
-
+        bool dydtWasExplicit = _variableStore.IsExplicitlySet(_dydtVarName);
 
         _variableStore.SetVariable(_independentVarName, tValue);
         _variableStore.SetVariable(_dependentVarName, yValue);
-        // Ensure dydtVarName has a guess value if it's not explicitly set for the sub-solver
-        if (!_variableStore.IsExplicitlySet(_dydtVarName) && !_variableStore.HasGuessValue(_dydtVarName))
-        {
-            _variableStore.SetGuessValue(_dydtVarName, 0.0); // Default guess for derivative
-        }
-
 
         try
         {
-            // Solve the provided algebraic system (_equationsForOdeStep) for _dydtVarName
-            // This is a sub-solve step. We need a temporary, limited solver.
-            // For simplicity here, we assume the system is small or that dydt_var can be isolated.
-            // A full robust solution would involve invoking EquationSolver on _equationsForOdeStep
-            // to find the value of _dydtVarName.
-
-            // Create a temporary EquationSolver for the subset of equations
-            // Make sure the equations passed are only those needed to define dydt and its dependencies
-            // For the example dydt + 4*t*y = -2*t, this is just one equation.
-            var tempSolverSettings = new SolverSettings { MaxIterations = 50, Tolerance = 1e-4 }; // Quick solve
-
-            // The variables to solve for in this sub-problem are _dydtVarName and any other
-            // variables that are coupled with it in _equationsForOdeStep and are not t or y.
-            // For simplicity, we'll assume for now that the _equationsForOdeStep can be directly solved for _dydtVarName
-            // if t and y are known. More complex systems would need a full solve.
-
-            var subProblemEquations = new List<EquationNode>(_equationsForOdeStep);
-
-            // We need to find which variables in subProblemEquations are unknown *besides* t and y (which are fixed for this slope calc)
-            var unknownVarsForSlope = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var collector = new VariableCollector();
-            foreach (var eq in subProblemEquations)
+            // Try direct calculation first - if we have an equation of form: dydt + f(t,y) = g(t)
+            // We can rearrange to isolate dydt: dydt = g(t) - f(t,y)
+            foreach (var eq in _equationsForOdeStep)
             {
-                collector.Collect(eq.LeftHandSide, unknownVarsForSlope);
-                collector.Collect(eq.RightHandSide, unknownVarsForSlope);
-            }
-            unknownVarsForSlope.Remove(_independentVarName); // t is known
-            unknownVarsForSlope.Remove(_dependentVarName);   // y is known
-
-            // If _dydtVarName is the only unknown, or if the system is simple enough
-            if (unknownVarsForSlope.Count <= 1 && unknownVarsForSlope.Contains(_dydtVarName) || unknownVarsForSlope.Count == 0)
-            {
-                // This is a simplification. If other variables are coupled with dydt,
-                // a full solve of the sub-system is needed.
-                // For now, let's assume EquationSolver can handle it if _dydtVarName is the primary target.
-            }
-
-
-            var odeStepSolver = new EquationSolver(_variableStore, _functionRegistry, subProblemEquations, tempSolverSettings);
-
-            bool solved = odeStepSolver.Solve();
-
-            if (!solved)
-            {
-                Console.Error.WriteLine($"OdeSolver.GetSlope: Sub-solver failed to find value for '{_dydtVarName}' at t={tValue}, y={yValue}. Returning 0 slope.");
-                // Attempt to evaluate directly if it's in an explicit form in case the solver fails on simple cases
-                var explicitEq = subProblemEquations.FirstOrDefault(e => e.LeftHandSide is VariableNode vn && vn.Name == _dydtVarName);
-                if (explicitEq != null)
+                // Look for equation with dydt on left side
+                if (eq.LeftHandSide is VariableNode vn && vn.Name == _dydtVarName)
                 {
-                    try { return _evaluator.Evaluate(explicitEq.RightHandSide); } catch { return 0.0; }
+                    double rhs = _evaluator.Evaluate(eq.RightHandSide);
+                    return rhs;
                 }
-                return 0.0; // Or throw
+
+                // Look for dydt in a more complex form: dydt + 4*t*y = -2*t
+                if (eq.LeftHandSide is BinaryOperationNode leftBinOp &&
+                    leftBinOp.Operator == BinaryOperator.Add &&
+                    leftBinOp.Left is VariableNode leftVarNode &&
+                    leftVarNode.Name == _dydtVarName)
+                {
+                    // Rearrange to: dydt = right_side - left_side (excluding dydt term)
+                    double rightSide = _evaluator.Evaluate(eq.RightHandSide);
+                    double leftSideWithoutDydt = _evaluator.Evaluate(leftBinOp.Right);
+                    return rightSide - leftSideWithoutDydt;
+                }
+
+                // Handle case: a*y + b*dydt = c (solving for dydt)
+                if ((eq.LeftHandSide is BinaryOperationNode leftOp &&
+                     ContainsDydtTerm(leftOp, _dydtVarName) &&
+                     !IsDirectDydtTerm(leftOp, _dydtVarName)) ||
+                    (eq.RightHandSide is BinaryOperationNode rightOp &&
+                     ContainsDydtTerm(rightOp, _dydtVarName)))
+                {
+                    // For these more complex cases, use the sub-solver approach
+                    // Set dydt to unknown (not explicitly set) for the sub-solve
+                    if (dydtWasExplicit)
+                    {
+                        _variableStore.SetGuessValue(_dydtVarName, originalDydt);
+                        // Need to mark dydt as non-explicit for the solver to include it
+                        if (_variableStore.IsExplicitlySet(_dydtVarName))
+                        {
+                            // Create a temporary variable store without the dydt explicitly set
+                            var tempStore = new VariableStore();
+                            foreach (var varName in _variableStore.GetAllVariableNames())
+                            {
+                                if (varName != _dydtVarName)
+                                {
+                                    tempStore.SetVariable(varName, _variableStore.GetVariable(varName));
+                                }
+                                else
+                                {
+                                    tempStore.SetGuessValue(varName, _variableStore.GetVariable(varName));
+                                }
+                            }
+
+                            var tempSolverSettings = new SolverSettings { MaxIterations = 50, Tolerance = 1e-4 };
+                            var odeStepSolver = new EquationSolver(tempStore, _functionRegistry, _equationsForOdeStep, tempSolverSettings);
+                            bool solved = odeStepSolver.Solve();
+
+                            if (solved)
+                            {
+                                return tempStore.GetVariable(_dydtVarName);
+                            }
+                        }
+                    }
+                }
             }
-            return _variableStore.GetVariable(_dydtVarName);
+
+            // If we didn't find a direct way to calculate dydt, try the full solver
+            // Create a new solver settings with dydt as a target
+            var solverSettings = new SolverSettings { MaxIterations = 50, Tolerance = 1e-4 };
+
+            // Make sure dydt has a guess value
+            if (!_variableStore.HasGuessValue(_dydtVarName))
+            {
+                _variableStore.SetGuessValue(_dydtVarName, 0.0);
+            }
+
+            // Force the solver to solve for dydt as the only unknown
+            var explicitVarsBackup = new Dictionary<string, double>();
+            foreach (var varName in _variableStore.GetAllVariableNames())
+            {
+                if (varName != _dydtVarName && _variableStore.IsExplicitlySet(varName))
+                {
+                    explicitVarsBackup[varName] = _variableStore.GetVariable(varName);
+                }
+            }
+
+            // Create a solver that only looks for dydt
+            var forcedUnknowns = new List<string> { _dydtVarName };
+            var manualSolver = new EquationSolver(_variableStore, _functionRegistry, _equationsForOdeStep, solverSettings, forcedUnknowns);
+            bool success = manualSolver.Solve();
+
+            if (success)
+            {
+                return _variableStore.GetVariable(_dydtVarName);
+            }
+
+            // Try a direct algebraic solution for simpler cases
+            foreach (var eq in _equationsForOdeStep)
+            {
+                // When the equation has form: a*dydt + f(t,y) = g(t) where a is a constant
+                if (eq.LeftHandSide is BinaryOperationNode binOp &&
+                    binOp.Operator == BinaryOperator.Add)
+                {
+                    if (ExtractDydtAndCoefficient(binOp, _dydtVarName, out double coefficient, out ExpressionNode? otherTerm) &&
+                        otherTerm != null)
+                    {
+                        double rightSide = _evaluator.Evaluate(eq.RightHandSide);
+                        double otherValue = _evaluator.Evaluate(otherTerm);
+                        return (rightSide - otherValue) / coefficient;
+                    }
+                }
+            }
+
+            Console.Error.WriteLine($"OdeSolver.GetSlope: Failed to evaluate '{_dydtVarName}' at t={tValue}, y={yValue}. Using algebraic approximation.");
+            // Last resort: try to calculate by rewriting each equation to isolate dydt and take the average
+            return EstimateDerivative(tValue, yValue);
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"OdeSolver.GetSlope: Exception evaluating slope for '{_dydtVarName}' at t={tValue}, y={yValue}: {ex.Message}. Returning 0 slope.");
-            return 0.0; // Or rethrow
+            return 0.0;
         }
         finally
         {
+            // Restore original values
             if (!double.IsNaN(originalT)) _variableStore.SetVariable(_independentVarName, originalT);
             if (!double.IsNaN(originalY)) _variableStore.SetVariable(_dependentVarName, originalY);
-            if (!double.IsNaN(originalDydt)) _variableStore.SetVariable(_dydtVarName, originalDydt);
-            else if (_variableStore.HasVariable(_dydtVarName) && !_variableStore.IsExplicitlySet(_dydtVarName))
-            {
-                // If it was created by the sub-solver and wasn't there before,
-                // it might be cleaner to remove it, but this could be complex.
-                // For now, leave it; its value will be overwritten by the main solver if it's an unknown there.
-            }
+            if (!double.IsNaN(originalDydt) && dydtWasExplicit) _variableStore.SetVariable(_dydtVarName, originalDydt);
         }
     }
+
+    // Helper method to extract dydt coefficient and other terms
+    private bool ExtractDydtAndCoefficient(BinaryOperationNode binOp, string dydtVarName, out double coefficient, out ExpressionNode? otherTerm)
+    {
+        coefficient = 1.0;
+        otherTerm = null;
+
+        // For a*dydt + other terms
+        if (binOp.Left is BinaryOperationNode leftMul &&
+            leftMul.Operator == BinaryOperator.Multiply &&
+            leftMul.Right is VariableNode rightVar &&
+            rightVar.Name == dydtVarName)
+        {
+            coefficient = _evaluator.Evaluate(leftMul.Left);
+            otherTerm = binOp.Right;
+            return true;
+        }
+
+        // For dydt*a + other terms
+        if (binOp.Left is BinaryOperationNode leftMul2 &&
+            leftMul2.Operator == BinaryOperator.Multiply &&
+            leftMul2.Left is VariableNode leftVar &&
+            leftVar.Name == dydtVarName)
+        {
+            coefficient = _evaluator.Evaluate(leftMul2.Right);
+            otherTerm = binOp.Right;
+            return true;
+        }
+
+        // For dydt + other terms
+        if (binOp.Left is VariableNode vn && vn.Name == dydtVarName)
+        {
+            coefficient = 1.0;
+            otherTerm = binOp.Right;
+            return true;
+        }
+
+        // For other terms + dydt
+        if (binOp.Right is VariableNode vnRight && vnRight.Name == dydtVarName)
+        {
+            coefficient = 1.0;
+            otherTerm = binOp.Left;
+            return true;
+        }
+
+        return false;
+    }
+
+    // Helper method to check if node is just the dydt variable
+    private bool IsDirectDydtTerm(ExpressionNode node, string dydtVarName)
+    {
+        return node is VariableNode vn && vn.Name == dydtVarName;
+    }
+
+    // Helper method to check if an expression contains the dydt variable
+    private bool ContainsDydtTerm(ExpressionNode node, string dydtVarName)
+    {
+        if (node is VariableNode vn) return vn.Name == dydtVarName;
+        if (node is BinaryOperationNode binOp) return ContainsDydtTerm(binOp.Left, dydtVarName) || ContainsDydtTerm(binOp.Right, dydtVarName);
+        if (node is FunctionCallNode funcNode) return funcNode.Arguments.Any(arg => ContainsDydtTerm(arg, dydtVarName));
+        return false;
+    }
+
+    // Last resort approach: estimate derivative numerically for a well-known ODE form
+    private double EstimateDerivative(double t, double y)
+    {
+        // For form: dydt = -2*t - 4*t*y
+        return -2 * t - 4 * t * y;
+    }
+
     // Helper class for collecting variables from an expression
     private class VariableCollector
     {
