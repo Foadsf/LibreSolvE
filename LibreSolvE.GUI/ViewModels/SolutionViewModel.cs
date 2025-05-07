@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic; // Add this for List<T>
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using Avalonia.Threading;
 using System.Linq;
 
 namespace LibreSolvE.GUI.ViewModels
@@ -34,23 +35,32 @@ namespace LibreSolvE.GUI.ViewModels
 
         public void UpdateResults(VariableStore store)
         {
-            if (store == null) return;
+            // Log entry point
+            Debug.WriteLine("[SolutionViewModel.UpdateResults] Method called.");
 
-            // Create a temporary list to hold all items before updating the observable collection
-            var newItems = new List<VariableResultItem>();
-
-            var allVarNames = store.GetAllVariableNames().OrderBy(name => name);
-            foreach (var varName in allVarNames)
+            if (store == null)
             {
-                string source;
-                if (store.IsExplicitlySet(varName)) source = "Explicit";
-                else if (store.HasVariable(varName)) source = "Solved";
-                else if (store.HasGuessValue(varName)) source = "Guess";
-                else source = "Default";
+                Debug.WriteLine("[SolutionViewModel.UpdateResults] Input VariableStore is null. Clearing variables.");
+                // Ensure clear happens on UI thread if needed
+                Dispatcher.UIThread.Post(() => Variables.Clear());
+                return;
+            }
 
+            var varNames = store.GetAllVariableNames().ToList(); // Get names once
+            Debug.WriteLine($"[SolutionViewModel.UpdateResults] Store contains {varNames.Count} variables: {string.Join(", ", varNames)}");
+
+            var newItems = new List<VariableResultItem>();
+            foreach (var varName in varNames.OrderBy(name => name)) // Order them
+            {
                 try
                 {
-                    double value = store.GetVariable(varName);
+                    string source;
+                    if (store.IsExplicitlySet(varName)) source = "Explicit";
+                    else if (store.HasVariable(varName)) source = "Solved/Calculated"; // Changed terminology slightly
+                    else if (store.HasGuessValue(varName)) source = "Guess";
+                    else source = "Default";
+
+                    double value = store.GetVariable(varName); // GetVariable handles default/guess internally
                     string units = store.GetUnit(varName);
 
                     newItems.Add(new VariableResultItem
@@ -60,25 +70,37 @@ namespace LibreSolvE.GUI.ViewModels
                         Units = units,
                         Source = source
                     });
+                    // Log each item prepared
+                    // Debug.WriteLine($"[SolutionViewModel.UpdateResults] Prepared item: {varName}={value} [{units}] ({source})");
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"Error getting value for variable {varName}: {ex.Message}");
+                    Debug.WriteLine($"[SolutionViewModel.UpdateResults] Error getting value/unit for variable {varName}: {ex.Message}");
+                    // Optionally add an error item to the list
+                    newItems.Add(new VariableResultItem { Name = varName, Units = "Error", Source = ex.Message });
                 }
             }
+            Debug.WriteLine($"[SolutionViewModel.UpdateResults] Prepared temporary list with {newItems.Count} items.");
 
-            // Update the UI on the UI thread - fix the delegate reference
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            // --- UI Thread Update ---
+            Dispatcher.UIThread.Post(() =>
             {
-                Variables.Clear();
-                foreach (var item in newItems)
+                Debug.WriteLine($"[SolutionViewModel.UpdateResults] Executing on UI thread. Current Variables count BEFORE Clear: {Variables.Count}");
+                try
                 {
-                    Variables.Add(item);
+                    Variables.Clear();
+                    Debug.WriteLine($"[SolutionViewModel.UpdateResults] Variables collection cleared on UI thread.");
+                    foreach (var item in newItems)
+                    {
+                        Variables.Add(item);
+                    }
+                    Debug.WriteLine($"[SolutionViewModel.UpdateResults] Finished updating Variables collection on UI thread. New count AFTER Add: {Variables.Count}");
                 }
-
-                // Debug output to confirm data was added
-                Debug.WriteLine($"Added {newItems.Count} variables to solution view");
-            });
+                catch (Exception uiEx)
+                {
+                    Debug.WriteLine($"[SolutionViewModel.UpdateResults] *** ERROR updating ObservableCollection on UI thread: {uiEx.Message} ***");
+                }
+            }, DispatcherPriority.Background);
         }
     }
 }

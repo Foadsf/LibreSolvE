@@ -515,30 +515,14 @@ public class StatementExecutor
     // Helper to check if an equation node (LHS or RHS) contains a derivative term (heuristic)
     private bool ContainsDerivativeTerm(EquationNode eq)
     {
-        // A simple heuristic: does it contain "dydt" or similar?
-        // This could be improved by checking if any variable in the equation
-        // is used as the first argument to an INTEGRAL function.
-        Func<AstNode, bool>? hasDydt = null;
-        hasDydt = (node) =>
+        // Check if the equation involves a dydt variable anywhere
+        // Fix CS8602: Add null check for eq itself and its properties
+        if (eq == null || (eq.LeftHandSide == null && eq.RightHandSide == null))
         {
-            if (node == null) return false;
-
-            if (node is VariableNode vn)
-                // Fix for warning on line 530: Add null check for vn.Name
-                return !string.IsNullOrEmpty(vn.Name) && vn.Name.ToLowerInvariant().Contains("dydt");
-
-            if (node is BinaryOperationNode bon)
-                // Fix for warnings on lines 531 and 534: Simplify the logic to avoid null checking
-                return hasDydt(bon.Left) || hasDydt(bon.Right);
-
-            if (node is FunctionCallNode fcn)
-                // The Arguments property is already non-nullable, just check if it has any elements
-                return fcn.Arguments.Any(a => hasDydt(a));
-
             return false;
-        };
-
-        return hasDydt(eq.LeftHandSide) || hasDydt(eq.RightHandSide);
+        }
+        return (eq.LeftHandSide != null && ContainsDerivativeTerms(eq.LeftHandSide)) ||
+               (eq.RightHandSide != null && ContainsDerivativeTerms(eq.RightHandSide));
     }
 
 

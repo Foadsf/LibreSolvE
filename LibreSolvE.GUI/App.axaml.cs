@@ -1,18 +1,38 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Data.Core;
 using Avalonia.Data.Core.Plugins;
-using System.Linq;
 using Avalonia.Markup.Xaml;
+using LibreSolvE.GUI.Logging;
 using LibreSolvE.GUI.ViewModels;
 using LibreSolvE.GUI.Views;
+using Serilog;
+using System;
+using System.Reactive.Linq;
+using System.Linq;
 
 namespace LibreSolvE.GUI;
 
 public partial class App : Application
 {
+    // Custom observable sink for UI updates
+    public static CustomSubjectSink? CustomSink { get; internal set; }
+
     public override void Initialize()
     {
+        // --- Serilog Configuration ---
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Debug() // Log everything from Debug level up
+            .WriteTo.Debug()      // Write to Visual Studio Debug output
+            .WriteTo.File("logs/gui_debug_.log", // Log to a rolling file
+                          rollingInterval: RollingInterval.Day,
+                          retainedFileCountLimit: 7,
+                          outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+            .WriteTo.CustomSubject(Serilog.Events.LogEventLevel.Debug) // Send logs to our custom observable sink
+            .CreateLogger();
+
+        Log.Information("--- Application Starting ---");
+        // --- End Serilog Configuration ---
+
         AvaloniaXamlLoader.Load(this);
     }
 
@@ -20,20 +40,23 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            // Create a ViewModel instance first
-            var viewModel = new MainWindowViewModel();
-
-            // Create the window and set its DataContext
-            var mainWindow = new MainWindow
+            // Register exit event handler for cleanup
+            desktop.Exit += (s, e) =>
             {
-                DataContext = viewModel
+                Log.Information("--- Application Exiting ---");
+                Log.CloseAndFlush(); // Ensure logs are flushed on exit
             };
 
-            // Set the window reference explicitly
-            viewModel.SetWindow(mainWindow);
+            DisableAvaloniaDataAnnotationValidation();
+            var viewModel = new MainWindowViewModel(); // Create VM
+            var mainWindow = new MainWindow { DataContext = viewModel }; // Set DC
+            viewModel.SetWindow(mainWindow); // Pass window ref
 
-            // Set the desktop's MainWindow
             desktop.MainWindow = mainWindow;
+        }
+        else if (ApplicationLifetime is ISingleViewApplicationLifetime singleViewPlatform)
+        {
+            // Handle single view if needed
         }
 
         base.OnFrameworkInitializationCompleted();

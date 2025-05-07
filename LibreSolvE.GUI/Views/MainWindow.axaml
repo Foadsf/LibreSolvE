@@ -70,31 +70,21 @@
             <!-- Right Panel: Results and Plots (Tabbed or Stacked) -->
             <TabControl Grid.Column="2" Margin="5">
                 <TabItem Header="Solution">
-                    <Panel>
-                        <TextBlock Text="Solution / Output" Margin="5,5,5,0" FontWeight="Bold"
-                            DockPanel.Dock="Top" />
-                        <!-- DataGrid for structured solution -->
-                        <DataGrid x:Name="SolutionDataGrid"
-                            ItemsSource="{Binding SolutionVM.Variables}"
-                            Margin="5"
-                            AutoGenerateColumns="False"
-                            IsReadOnly="True">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="Variable" Binding="{Binding Name}"
-                                    Width="*" />
-                                <DataGridTextColumn Header="Value"
-                                    Binding="{Binding Value, StringFormat='N6'}" Width="*" />
-                                <DataGridTextColumn Header="Units" Binding="{Binding Units}"
-                                    Width="*" />
-                                <DataGridTextColumn Header="Source" Binding="{Binding Source}"
-                                    Width="Auto" />
-                            </DataGrid.Columns>
-                        </DataGrid>
-                        <!-- Fallback for raw text output if needed -->
-                        <!-- <TextBox Text="{Binding OutputText}" IsReadOnly="True" Margin="5"
-                        AcceptsReturn="True" TextWrapping="Wrap"
-                        VerticalScrollBarVisibility="Auto"/> -->
-                    </Panel>
+                    <!-- Remove the Panel, put DataGrid directly as content -->
+                    <DataGrid x:Name="SolutionDataGrid"
+                        ItemsSource="{Binding SolutionVM.Variables}"
+                        Margin="5"
+                        AutoGenerateColumns="False"
+                        IsReadOnly="True">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Variable" Binding="{Binding Name}" Width="*" />
+                            <DataGridTextColumn Header="Value"
+                                Binding="{Binding Value, StringFormat='N6'}" Width="*" />
+                            <DataGridTextColumn Header="Units" Binding="{Binding Units}" Width="*" />
+                            <DataGridTextColumn Header="Source" Binding="{Binding Source}"
+                                Width="Auto" />
+                        </DataGrid.Columns>
+                    </DataGrid>
                 </TabItem>
                 <TabItem Header="Plots">
                     <!-- This will host one or more PlotViews. For simplicity, let's show the first
@@ -123,6 +113,34 @@
                 </TabItem>
                 <!-- TODO: Add tabs for Parametric Table, Lookup Table, Arrays, Residuals, Formatted
                 Equations etc. -->
+                <TabItem Header="Debug Log">
+                    <Panel>
+                        <!-- Optional: Add a clear button -->
+                        <!-- <Button Content="Clear Log" Command="{Binding
+                        DebugLogVM.ClearLogCommand}" DockPanel.Dock="Top"/> -->
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                            HorizontalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding DebugLogVM.Logs}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" FontFamily="Consolas,Monospace"
+                                            FontSize="11" TextWrapping="NoWrap" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <!-- Alternative: Use a read-only TextBox -->
+                            <!--
+                            <TextBox Text="{Binding DebugLogVM.FormattedLogText}"
+                                     IsReadOnly="True"
+                                     AcceptsReturn="True"
+                                     TextWrapping="NoWrap"
+                                     ScrollViewer.VerticalScrollBarVisibility="Visible"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Visible"
+                                     FontFamily="Consolas,Monospace"/>
+                            -->
+                        </ScrollViewer>
+                    </Panel>
+                </TabItem>
             </TabControl>
         </Grid>
     </DockPanel>

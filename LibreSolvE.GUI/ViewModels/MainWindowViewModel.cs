@@ -18,6 +18,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Input; // For ICommand
 using Antlr4.Runtime; // For ANTLR parsing components
+using LibreSolvE.GUI.AOP;
 
 namespace LibreSolvE.GUI.ViewModels
 {
@@ -33,7 +34,7 @@ namespace LibreSolvE.GUI.ViewModels
         private SolutionViewModel _solutionVM = new SolutionViewModel();
         private ObservableCollection<PlotViewModel> _plotViewModels = new ObservableCollection<PlotViewModel>();
 
-        private StatementExecutor? _executor; // Core executor instance
+        // private StatementExecutor? _executor; // Core executor instance
 
         // Add this property that was missing
         public PlotView? PlotView { get; set; }
@@ -91,6 +92,14 @@ namespace LibreSolvE.GUI.ViewModels
         public ICommand RunCommand { get; }
         public ICommand ExitCommand { get; }
 
+        private DebugLogViewModel _debugLogVM = new DebugLogViewModel(); // Initialize in declaration
+        public DebugLogViewModel DebugLogVM   // Add this
+        {
+            get => _debugLogVM;
+            set => SetProperty(ref _debugLogVM, value);
+        }
+
+        [Log]
         public MainWindowViewModel()
         {
             OpenCommand = new AsyncRelayCommand(OpenFileAsync);
@@ -113,6 +122,7 @@ namespace LibreSolvE.GUI.ViewModels
             EquationsVM = new EquationsViewModel();
             SolutionVM = new SolutionViewModel();
             PlotViewModels = new ObservableCollection<PlotViewModel>();
+            DebugLogVM = new DebugLogViewModel(); // Instantiate the DebugLog VM
 
 
             // Two-way synchronization between FileContent and EquationsVM.EquationText
@@ -269,125 +279,158 @@ namespace LibreSolvE.GUI.ViewModels
             }
         }
 
+        [Log]
         private void RunFile()
         {
-            var outputBuilder = new StringBuilder();
-            TextWriter originalConsoleOut = Console.Out;
-            StringWriter capturedConsoleWriter = new StringWriter();
-            string currentInputText = EquationsVM.EquationText; // Get current text from editor VM
+            // --- Setup ---
+            var outputBuilder = new StringBuilder(); // To collect all output for the UI TextBox
+            TextWriter originalConsoleOut = Console.Out; // Save original console output stream
+            StringWriter capturedConsoleWriter = new StringWriter(); // To capture Console.Write from core library
+            string currentInputText = EquationsVM.EquationText; // Get the code to run from the editor ViewModel
 
-            StatusText = "Executing...";
-            OutputText = ""; // Clear previous output
-            SolutionVM.Variables.Clear(); // Clear previous solution
-            PlotViewModels.Clear(); // Clear previous plots
+            // --- Reset UI State ---
+            StatusText = "Executing..."; // Update status bar
+            OutputText = ""; // Clear the raw output text box
+            SolutionVM.Variables.Clear(); // Clear the previous solution grid visually
+            PlotViewModels.Clear(); // Clear any plots from the previous run
+
+            // --- Declare Core Variables ---
+            // These need to be declared outside the try block to be accessible in finally
+            VariableStore? variableStore = null;
+            StatementExecutor? executor = null; // Use the class field _executor if appropriate, or local if instance-per-run
+            bool solveSuccess = false;
+            EesParser? parser = null; // Declare parser here
+            EesLexer? lexer = null;   // Declare lexer here
 
             try
             {
-                Console.SetOut(capturedConsoleWriter); // Capture all Console.Write from core
+                Console.SetOut(capturedConsoleWriter); // Redirect Console.Write to capture core library output
 
                 // 1. Initialize Core Components
-                var variableStore = new VariableStore();
-                var functionRegistry = new FunctionRegistry();
-                var solverSettings = new SolverSettings(); // TODO: Expose these settings in UI later
+                variableStore = new VariableStore(); // Initialize the variable store for this run
+                var functionRegistry = new FunctionRegistry(); // Initialize function registry (with built-ins)
+                var solverSettings = new SolverSettings(); // Initialize solver settings (TODO: Link to UI later)
 
-                // 2. Parse Units
+                // 2. Parse Units from Source
                 var unitsDictionary = UnitParser.ExtractUnitsFromSource(currentInputText);
                 UnitParser.ApplyUnitsToVariableStore(variableStore, unitsDictionary);
                 LogCaptured(capturedConsoleWriter, $"Found {unitsDictionary.Count} units.\n");
 
-                // 3. ANTLR Parsing
+                // 3. ANTLR Parsing Setup
                 AntlrInputStream inputStream = new AntlrInputStream(currentInputText);
-                EesLexer lexer = new EesLexer(inputStream);
+                lexer = new EesLexer(inputStream); // Assign to the declared variable
                 CommonTokenStream commonTokenStream = new CommonTokenStream(lexer);
-                EesParser parser = new EesParser(commonTokenStream);
-                var errorListener = new BetterErrorListener();
-                parser.RemoveErrorListeners();
+                parser = new EesParser(commonTokenStream); // Assign to the declared variable
+
+                // Setup error handling (now parser and lexer are in scope)
+                var errorListener = new BetterErrorListener(); // Custom listener for better errors
+                parser.RemoveErrorListeners(); // Remove default console error listener
                 lexer.RemoveErrorListeners();
-                parser.AddErrorListener(errorListener);
+                parser.AddErrorListener(errorListener); // Add our custom listener
                 lexer.AddErrorListener(errorListener);
 
-                EesParser.EesFileContext parseTreeContext = parser.eesFile();
+                // --- Parse ---
+                LogCaptured(capturedConsoleWriter, "Parsing input...\n");
+                EesParser.EesFileContext parseTreeContext = parser.eesFile(); // Execute the parse rule
                 LogCaptured(capturedConsoleWriter, "Parsing successful.\n");
 
-                // 4. Build AST
+                // 4. Build Abstract Syntax Tree (AST)
+                LogCaptured(capturedConsoleWriter, "Building AST...\n");
                 var astBuilder = new AstBuilderVisitor();
-                AstNode rootAstNode = astBuilder.VisitEesFile(parseTreeContext);
+                AstNode rootAstNode = astBuilder.VisitEesFile(parseTreeContext); // Visit the parse tree to build AST
                 LogCaptured(capturedConsoleWriter, "AST built.\n");
 
                 if (rootAstNode is EesFileNode fileNode)
                 {
-                    // 5. Initialize StatementExecutor & Execute
-                    // Create a new executor instance for each run
-                    _executor = new StatementExecutor(variableStore, functionRegistry, solverSettings);
-                    _executor.PlotCreated += OnPlotCreated; // Subscribe to plot event
+                    // 5. Initialize StatementExecutor & Execute Assignments/ODEs
+                    executor = new StatementExecutor(variableStore, functionRegistry, solverSettings); // Use local instance
+                    executor.PlotCreated += OnPlotCreated; // Subscribe to plot event
 
-                    _executor.Execute(fileNode); // This processes assignments, ODEs (which might raise PlotCreated)
-                    LogCaptured(capturedConsoleWriter, "Initial statements and ODEs (if any) executed.\n");
+                    LogCaptured(capturedConsoleWriter, "Executing initial statements and ODEs...\n");
+                    executor.Execute(fileNode); // Process assignments, ODEs, directives
+                    LogCaptured(capturedConsoleWriter, "Initial execution phase complete.\n");
+
+                    // --- Log Variable State Before Algebraic Solve ---
+                    LogCaptured(capturedConsoleWriter, "Variable Store State BEFORE Algebraic Solve:\n");
+                    // Temporarily redirect for PrintVariables
+                    TextWriter tempOut = Console.Out;
+                    Console.SetOut(capturedConsoleWriter);
+                    variableStore.PrintVariables();
+                    Console.SetOut(tempOut);
+                    // ---
 
                     // 6. Solve Remaining Algebraic Equations
-                    bool solveSuccess = _executor.SolveRemainingAlgebraicEquations();
+                    LogCaptured(capturedConsoleWriter, "Solving algebraic equations...\n");
+                    solveSuccess = executor.SolveRemainingAlgebraicEquations(); // Attempt to solve the system
                     LogCaptured(capturedConsoleWriter, $"Algebraic solve attempt {(solveSuccess ? "succeeded" : "failed")}.\n");
 
-                    // 7. Update UI
-                    try
-                    {
-                        // After solving
-                        SolutionVM.UpdateResults(variableStore);
+                    // --- Log Variable State After Algebraic Solve ---
+                    LogCaptured(capturedConsoleWriter, "Variable Store State AFTER Algebraic Solve:\n");
+                    // Temporarily redirect for PrintVariables
+                    tempOut = Console.Out;
+                    Console.SetOut(capturedConsoleWriter);
+                    variableStore.PrintVariables();
+                    Console.SetOut(tempOut);
+                    // ---
 
-                        // Add debug output
-                        Debug.WriteLine($"Updated SolutionVM with {variableStore.GetAllVariableNames().Count()} variables");
-                        foreach (var varName in variableStore.GetAllVariableNames())
-                        {
-                            Debug.WriteLine($"  {varName} = {variableStore.GetVariable(varName)}");
-                        }
-
-                        StatusText = solveSuccess ? "Execution complete. Solver converged." : "Execution complete. Solver did NOT converge or no algebraic equations to solve.";
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Error updating solution view: {ex.Message}");
-                    }
-
-                    // Any plots generated during _executor.Execute (e.g., from $IntegralTable)
-                    // would have been handled by OnPlotCreated.
-                    // If PLOT commands are processed after SolveRemainingAlgebraicEquations,
-                    // they would also trigger OnPlotCreated.
+                    // 7. Update Status Text
+                    StatusText = solveSuccess ? "Execution complete. Solver converged." : "Execution complete. Solver did NOT converge or no algebraic equations to solve.";
                 }
                 else
                 {
+                    // Handle case where AST root is not the expected type
                     outputBuilder.AppendLine("AST Build Error: Root node is not EesFileNode.");
                     StatusText = "AST Build Error";
+                    solveSuccess = false; // Mark run as failed
                 }
             }
             catch (ParsingException pEx)
             {
-                outputBuilder.AppendLine($"PARSING FAILED:\n{pEx.Message}");
+                // Handle parsing errors specifically
+                outputBuilder.AppendLine($"\n--- PARSING FAILED ---\n{pEx.Message}");
                 StatusText = "Parsing Failed";
                 Debug.WriteLine($"Parsing Exception: {pEx}");
+                solveSuccess = false; // Mark run as failed
             }
             catch (Exception coreEx)
             {
-                outputBuilder.AppendLine($"CORE EXECUTION ERROR:\n{coreEx.GetType().Name}: {coreEx.Message}");
+                // Handle general errors during core execution or solving
+                outputBuilder.AppendLine($"\n--- CORE EXECUTION ERROR ---\n{coreEx.GetType().Name}: {coreEx.Message}");
                 if (coreEx.StackTrace != null)
                 {
                     outputBuilder.AppendLine(coreEx.StackTrace);
                 }
                 StatusText = "Core Execution Error";
                 Debug.WriteLine($"Core Exception: {coreEx}");
+                solveSuccess = false; // Mark run as failed
             }
             finally
             {
-                Console.SetOut(originalConsoleOut); // Restore console
-                outputBuilder.Insert(0, capturedConsoleWriter.ToString()); // Prepend captured console output
-                OutputText = outputBuilder.ToString();
+                // --- Restore Console and Update UI ---
+                Console.SetOut(originalConsoleOut); // IMPORTANT: Restore original console output
+                outputBuilder.Insert(0, capturedConsoleWriter.ToString()); // Prepend captured core output
+                OutputText = outputBuilder.ToString(); // Update the raw output UI element
 
-                if (_executor != null)
+                // Update the structured solution view, even if solve failed (might show intermediate values)
+                if (variableStore != null)
                 {
-                    _executor.PlotCreated -= OnPlotCreated; // Unsubscribe to prevent leaks
-                    _executor = null; // Release the instance
+                    Debug.WriteLine($"--- Attempting to update SolutionVM with {variableStore.GetAllVariableNames().Count()} variables (after finally) ---");
+                    SolutionVM.UpdateResults(variableStore); // Call update AFTER restoring console
+                }
+                else
+                {
+                    Debug.WriteLine("--- VariableStore was null in finally, cannot update SolutionVM ---");
+                    // UI Thread Post might be needed if clearing from non-UI thread causes issues
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() => SolutionVM.Variables.Clear());
+                }
+
+                // Unsubscribe from the event to prevent memory leaks
+                if (executor != null)
+                {
+                    executor.PlotCreated -= OnPlotCreated;
                 }
             }
-        }
+        } // End of RunFile method
 
         private void LogCaptured(TextWriter capturedWriter, string message)
         {
