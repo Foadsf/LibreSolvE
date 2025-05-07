@@ -94,12 +94,12 @@ class Program
     }
 
     static void ExecuteProgram(
-        FileInfo inputFile,
-        FileInfo? outputFile,
-        SolverType solver,
-        PlotFormat plotFormat,
-        bool quiet,
-        bool verbose)
+    FileInfo inputFile,
+    FileInfo? outputFile,
+    SolverType solver,
+    PlotFormat plotFormat,
+    bool quiet,
+    bool verbose)
     {
         var exitCode = 0;
         var outputBuilder = new StringBuilder();
@@ -123,7 +123,7 @@ class Program
             }
 
             // Create default output file if none specified
-            if (outputFile == null && !quiet)
+            if (outputFile == null)
             {
                 string outputPath = Path.Combine(
                     Path.GetDirectoryName(inputFile.FullName) ?? "",
@@ -189,13 +189,14 @@ class Program
                 File.WriteAllText(outputFile.FullName, logWriter.ToString());
                 if (!quiet)
                 {
-                    AnsiConsole.MarkupLine($"Results written to: [blue]{outputFile.FullName}[/]");
+                    // Just append this to the results instead of showing separately
+                    Console.WriteLine($"Results saved to: {outputFile.FullName}");
                 }
             }
 
             if (exitCode == 0 && !quiet)
             {
-                AnsiConsole.MarkupLine("[green]Processing completed successfully.[/]");
+                Console.WriteLine("[Success] Processing completed successfully.");
             }
         }
         catch (Exception ex)
@@ -306,11 +307,6 @@ class Program
                 renderer.SaveToFile(plotData, filename);
 
                 logWriter.WriteLine($"Plot saved to: {filename}");
-
-                if (!quiet)
-                {
-                    Console.WriteLine($"Plot saved to: {filename}");
-                }
             };
 
             // Execute statements
@@ -333,12 +329,6 @@ class Program
             {
                 logWriter.WriteLine("\n--- Solver Phase Completed Successfully ---");
 
-                // Show results header
-                if (!quiet)
-                {
-                    Console.WriteLine("\n" + new string('=', 25) + " RESULTS " + new string('=', 25));
-                }
-
                 // Final variable state
                 logWriter.WriteLine("\n--- Final Variable Store State ---");
                 StringWriter finalStateWriter = new StringWriter();
@@ -348,18 +338,23 @@ class Program
                 string variableStoreOutput = finalStateWriter.ToString();
                 logWriter.WriteLine(variableStoreOutput);
 
+                // Always show results in console
+                TextWriter consoleOut = originalOut;
+
                 // For console output, make it nicer in normal mode
                 if (!quiet)
                 {
+                    // Restore console output for displaying results
+                    Console.SetOut(consoleOut);
+
+                    // Show results header
+                    Console.WriteLine("\n" + new string('=', 25) + " RESULTS " + new string('=', 25));
+
+                    // Display the variables
                     DisplayPlainVariableTable(variableStoreOutput);
-                }
 
-                // Handle plots
-                if (generatedPlots.Count > 0)
-                {
-                    logWriter.WriteLine($"\n--- Generated {generatedPlots.Count} plots ---");
-
-                    if (!quiet)
+                    // Show plots information
+                    if (generatedPlots.Count > 0)
                     {
                         Console.WriteLine($"\nGenerated {generatedPlots.Count} plots:");
 
@@ -378,7 +373,7 @@ class Program
                 logWriter.WriteLine("\n--- Solver FAILED ---");
                 if (!quiet)
                 {
-                    Console.WriteLine("Solver FAILED");
+                    Console.WriteLine("\nSolver FAILED");
                 }
 
                 logWriter.WriteLine("\n--- Variable Store State After Failed Solve Attempt ---");
@@ -398,7 +393,7 @@ class Program
 
             if (!quiet)
             {
-                Console.WriteLine("PARSING FAILED");
+                Console.WriteLine("\nPARSING FAILED");
                 Console.WriteLine(pEx.Message);
             }
 
@@ -411,7 +406,7 @@ class Program
 
             if (!quiet)
             {
-                Console.WriteLine("FILE ERROR");
+                Console.WriteLine("\nFILE ERROR");
                 Console.WriteLine($"File access error: {ioEx.Message}");
             }
 
@@ -429,7 +424,7 @@ class Program
 
             if (!quiet)
             {
-                Console.WriteLine("UNEXPECTED ERROR");
+                Console.WriteLine("\nUNEXPECTED ERROR");
                 Console.WriteLine($"An unexpected error occurred: {ex.GetType().Name} - {ex.Message}");
 
                 if (verbose)
