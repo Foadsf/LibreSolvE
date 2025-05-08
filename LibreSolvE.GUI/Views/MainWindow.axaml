@@ -160,6 +160,9 @@
                 </TabItem>
                 <!-- TODO: Add tabs for Parametric Table, Lookup Table, Arrays, Residuals, Formatted
                 Equations etc. -->
+                <TabItem Header="Integral Table">
+                    <views:IntegralTableView DataContext="{Binding IntegralTableVM}" />
+                </TabItem>
                 <TabItem Header="Debug Log">
                     <DockPanel>
                         <!-- Add button panel at the top -->

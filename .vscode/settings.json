@@ -2,33 +2,58 @@
   // C# Settings (Requires C# extension from Microsoft)
   "[csharp]": {
     "editor.defaultFormatter": "ms-dotnettools.csharp",
-    "editor.formatOnSave": true
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  // XAML Settings (for Avalonia)
+  "[xaml]": {
+    "editor.defaultFormatter": "redhat.vscode-xml",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2
+  },
+  // PowerShell Settings
+  "[powershell]": {
+    "editor.defaultFormatter": "ms-vscode.powershell",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 4
   },
   // JSON Settings
   "[json]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode", // Example, requires Prettier extension
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
     "editor.formatOnSave": true,
     "editor.tabSize": 2
   },
   "[jsonc]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode", // Example, requires Prettier extension
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
     "editor.formatOnSave": true,
     "editor.tabSize": 2
   },
   // XML Settings
   "[xml]": {
-    "editor.defaultFormatter": "redhat.vscode-xml", // Example, requires XML extension by Red Hat
-    "editor.formatOnSave": true
+    "editor.defaultFormatter": "redhat.vscode-xml",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2
   },
-  // Add other formatters for YAML, etc. as needed
+  // Batch file settings
+  "[bat]": {
+    "editor.formatOnSave": true,
+    "files.encoding": "windows1252"
+  },
   // General setting to trim whitespace
   "files.trimTrailingWhitespace": true,
   "files.insertFinalNewline": true,
+  // Editor settings
+  "editor.rulers": [100, 120],
+  "editor.renderWhitespace": "boundary",
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": true,
+  // Terminal settings
   "terminal.integrated.env.windows": {
     // Set JAVA_HOME for VS Code's integrated terminal
     "JAVA_HOME": "C:\\Program Files\\OpenJDK\\jdk-22.0.2",
     // Prepend the specific Java bin to the PATH for the integrated terminal
-    // Note the escaped backslashes needed in JSON
     "PATH": "C:\\Program Files\\OpenJDK\\jdk-22.0.2\\bin;${env:PATH}"
   }
 }

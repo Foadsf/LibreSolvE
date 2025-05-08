@@ -38,6 +38,13 @@ namespace LibreSolvE.GUI.ViewModels
 
         // private StatementExecutor? _executor; // Core executor instance
 
+        private IntegralTableViewModel _integralTableVM = new IntegralTableViewModel();
+        public IntegralTableViewModel IntegralTableVM
+        {
+            get => _integralTableVM;
+            set => SetProperty(ref _integralTableVM, value);
+        }
+
         // Add this property that was missing
         public PlotView? PlotView { get; set; }
 
@@ -125,6 +132,8 @@ namespace LibreSolvE.GUI.ViewModels
             SolutionVM = new SolutionViewModel();
             PlotViewModels = new ObservableCollection<PlotViewModel>();
             DebugLogVM = new DebugLogViewModel(); // Instantiate the DebugLog VM
+
+            IntegralTableVM = new IntegralTableViewModel(); // Initialize the IntegralTableVM
 
 
             // Two-way synchronization between FileContent and EquationsVM.EquationText
@@ -295,6 +304,7 @@ namespace LibreSolvE.GUI.ViewModels
             OutputText = ""; // Clear the raw output text box
             SolutionVM.Variables.Clear(); // Clear the previous solution grid visually
             PlotViewModels.Clear(); // Clear any plots from the previous run
+            IntegralTableVM.TableData.Clear(); // Clear the integral table from the previous run
 
             // --- Declare Core Variables ---
             // These need to be declared outside the try block to be accessible in finally
@@ -427,6 +437,21 @@ namespace LibreSolvE.GUI.ViewModels
                         LogAttribute.LogMessage("SolutionVM now has {Count} variables", SolutionVM.Variables.Count);
                         SolutionVM.LogItemProperties();
                     }, DispatcherPriority.Background);
+
+                    // Update the integral table view model if executor has data
+                    if (executor != null)
+                    {
+                        var integralTable = executor.GetIntegralTable();
+                        if (integralTable != null && integralTable.Count > 0 && integralTable.Values.Any(v => v.Count > 0))
+                        {
+                            LogAttribute.LogMessage("Updating IntegralTableVM with data from executor");
+                            IntegralTableVM.UpdateFromIntegralTable(integralTable);
+                        }
+                        else
+                        {
+                            LogAttribute.LogMessage("No integral table data to display");
+                        }
+                    }
                 }
                 else
                 {

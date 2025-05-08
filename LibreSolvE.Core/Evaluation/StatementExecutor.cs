@@ -907,10 +907,6 @@ public class StatementExecutor
         Console.WriteLine("----------------------");
     }
 
-    public Dictionary<string, List<double>> GetIntegralTable()
-    {
-        return _integralTable;
-    }
 
     public void ProcessIntegralAutoStepDirective(string directiveText)
     {
@@ -1020,5 +1016,21 @@ public class StatementExecutor
         }
 
         return string.Empty;
+    }
+
+    public Dictionary<string, List<double>> GetIntegralTable()
+    {
+        if (!_integralTable.Any())
+        {
+            return new Dictionary<string, List<double>>();
+        }
+
+        // Return a copy to avoid external modifications affecting our internal state
+        var copy = new Dictionary<string, List<double>>();
+        foreach (var kvp in _integralTable)
+        {
+            copy[kvp.Key] = new List<double>(kvp.Value);
+        }
+        return copy;
     }
 }

@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:viewModels="clr-namespace:LibreSolvE.GUI.ViewModels"
+    x:DataType="viewModels:IntegralTableViewModel"
+    mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+    x:Class="LibreSolvE.GUI.Views.IntegralTableView">
+
+    <DockPanel>
+        <TextBlock DockPanel.Dock="Top"
+            Text="{Binding RowCount, StringFormat='Integral Table: {0} rows'}"
+            Margin="5"
+            FontWeight="Bold" />
+
+        <!-- Fixed: Removed Items binding which is invalid for DataGrid -->
+        <DataGrid Name="IntegralTableGrid"
+            AutoGenerateColumns="False"
+            IsReadOnly="True"
+            VerticalScrollBarVisibility="Auto"
+            HorizontalScrollBarVisibility="Auto"
+            Margin="5" />
+    </DockPanel>
+</UserControl>

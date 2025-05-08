@@ -161,17 +161,35 @@ function Build-Solution {
         # Variables to track errors and warnings
         $ErrorCount = 0
         $WarningCount = 0
+        $Errors = @()
+        $Warnings = @()
 
         # Process and display build output
         $BuildOutput | ForEach-Object {
             $Line = $_
-            if ($Line -match ": error ") {
-                Show-Error $Line
-                $ErrorCount++
+            if ($Line -match ": error " -or $Line -match "error AVLN[0-9]+:") {
+                # Extract the error code to avoid duplicates
+                if ($Line -match "(error [A-Z0-9]+:)" -or $Line -match "(error AVLN[0-9]+:)") {
+                    $errorCode = $Matches[1]
+                    # Only show error if we haven't seen this exact one before
+                    if ($Errors -notcontains $Line) {
+                        Show-Error $Line
+                        $Errors += $Line
+                        $ErrorCount++
+                    }
+                }
+                else {
+                    Show-Error $Line
+                    $ErrorCount++
+                }
             }
             elseif ($Line -match ": warning ") {
-                Show-Warning $Line
-                $WarningCount++
+                # Only show warning if we haven't seen this exact one before
+                if ($Warnings -notcontains $Line) {
+                    Show-Warning $Line
+                    $Warnings += $Line
+                    $WarningCount++
+                }
             }
             elseif ($Verbose) {
                 Write-Host $Line
