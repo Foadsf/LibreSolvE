@@ -359,6 +359,7 @@ public class OdeSolver
 
         for (int i = 0; i < numSteps; i++)
         {
+            // ... (RK2 step calculation) ...
             double k1 = GetSlope(t, y);
             double y_pred = y + k1 * actualStepSize;
             double t_next = t + actualStepSize;
@@ -370,11 +371,15 @@ public class OdeSolver
             _timeValues.Add(t);
             _resultValues.Add(y);
         }
-        return y;
+        // Set the final state using SetSolvedVariable before returning
+        _variableStore.SetSolvedVariable(_dependentVarName, y);
+        Console.WriteLine($"OdeSolver: Fixed step finished. Final {_dependentVarName}={y}");
+        return y; // Return the final value
     }
 
     private double SolveWithAdaptiveStep()
     {
+        // ... (setup code) ...
         double t = _lowerLimit;
         double y = _initialDepVarValue;
 
@@ -390,6 +395,7 @@ public class OdeSolver
 
         while (t < _upperLimit && stepsTaken < _maxSteps)
         {
+            // ... (RK4 and adaptive step logic) ...
             if (t + h > _upperLimit)
             {
                 h = _upperLimit - t; // Adjust last step
@@ -431,7 +437,11 @@ public class OdeSolver
             _resultValues.Add(y);
         }
         if (stepsTaken >= _maxSteps) Console.WriteLine($"OdeSolver: Max steps ({_maxSteps}) reached.");
-        return y;
+
+        // Set the final state using SetSolvedVariable before returning
+        _variableStore.SetSolvedVariable(_dependentVarName, y);
+        Console.WriteLine($"OdeSolver: Adaptive step finished. Final {_dependentVarName}={y}");
+        return y; // Return the final value
     }
 
     private int CalculateStepsForFixed()

@@ -247,7 +247,20 @@ function Run-Tests {
             # Save output to log file
             $Output | Out-File -FilePath $LogFile -Encoding utf8
 
-            if ($Result -ne 0) {
+            # Check for critical errors but treat certain warnings as non-fatal
+            $HasCriticalError = $false
+
+            # Loop through output lines to find critical errors but ignore the warning
+            # about the IntegralTable directive step size
+            foreach ($line in $Output) {
+                if ($line -match "Error:" -and
+                    !($line -match "Warning: Could not interpret step size .* in \$IntegralTable")) {
+                    $HasCriticalError = $true
+                    break
+                }
+            }
+
+            if ($Result -ne 0 -or $HasCriticalError) {
                 $FailCount++
                 $OverallResult = $false
                 Show-Error "Processing $($File.Name) failed"

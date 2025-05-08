@@ -1,116 +1,46 @@
-using Avalonia;
+// LibreSolvE.GUI/Views/PlotView.axaml.cs
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
-using OxyPlot;
-using OxyPlot.Series;
-using OxyPlot.Axes;
-using System.Collections.Generic;
-using System;
-using System.Linq;
-using LibreSolvE.GUI.ViewModels;
+// Add only necessary usings if any remain after cleaning up methods
+// using OxyPlot; // Likely not needed here anymore
+// using LibreSolvE.GUI.ViewModels; // Still needed if x:DataType is used in XAML
+// using System;
+// using System.Collections.Generic;
+// using System.Linq;
 
 namespace LibreSolvE.GUI.Views
 {
+    /// <summary>
+    /// Interaction logic for PlotView.xaml
+    /// This UserControl is designed to display a plot.
+    /// Its DataContext should be set to a PlotViewModel instance by its parent container.
+    /// The actual plot rendering is handled by the OxyPlot.Avalonia.PlotView control
+    /// defined within PlotView.axaml, which binds to the PlotModel property of the ViewModel.
+    /// </summary>
     public partial class PlotView : UserControl
     {
-        private readonly PlotViewModel _viewModel;
-
-        public static readonly StyledProperty<PlotModel> PlotModelProperty =
-            AvaloniaProperty.Register<PlotView, PlotModel>(nameof(PlotModel));
-
-        public PlotModel PlotModel
-        {
-            get => GetValue(PlotModelProperty);
-            set => SetValue(PlotModelProperty, value);
-        }
+        // No fields like _viewModel should be here anymore,
+        // as the view purely relies on its DataContext being set correctly.
 
         public PlotView()
         {
             InitializeComponent();
-            _viewModel = new PlotViewModel();
-            DataContext = _viewModel;
+            // The DataContext (which should be a PlotViewModel instance)
+            // is expected to be set by the parent view/container using this UserControl,
+            // for example, through a binding in an ItemsControl's DataTemplate
+            // or via direct assignment if used standalone.
         }
 
+        // Standard method required by Avalonia to load the XAML content.
         private void InitializeComponent()
         {
             AvaloniaXamlLoader.Load(this);
         }
 
-        public void UpdateFromIntegralTable(
-            string title,
-            string xAxisName,
-            Dictionary<string, List<double>> tableData,
-            IEnumerable<string> yAxisNames)
-        {
-            if (!tableData.ContainsKey(xAxisName))
-            {
-                _viewModel.PlotModel = new PlotModel { Title = "Error: X-axis variable not found" };
-                return;
-            }
-
-            var model = new PlotModel { Title = title };
-
-            // Configure axes
-            model.Axes.Add(new LinearAxis
-            {
-                Position = AxisPosition.Bottom,
-                Title = xAxisName,
-                MajorGridlineStyle = LineStyle.Solid,
-                MinorGridlineStyle = LineStyle.Dot
-            });
-
-            model.Axes.Add(new LinearAxis
-            {
-                Position = AxisPosition.Left,
-                Title = string.Join(", ", yAxisNames),
-                MajorGridlineStyle = LineStyle.Solid,
-                MinorGridlineStyle = LineStyle.Dot
-            });
-
-            // Get X values
-            var xValues = tableData[xAxisName];
-
-            // Standard colors for series
-            var colors = new OxyColor[]
-            {
-                OxyColors.Blue,
-                OxyColors.Red,
-                OxyColors.Green,
-                OxyColors.Orange,
-                OxyColors.Purple,
-                OxyColors.Teal,
-                OxyColors.Brown,
-                OxyColors.Magenta
-            };
-
-            int colorIndex = 0;
-            foreach (var yName in yAxisNames)
-            {
-                if (!tableData.ContainsKey(yName))
-                    continue;
-
-                var yValues = tableData[yName];
-
-                // Create a line series
-                var series = new LineSeries
-                {
-                    Title = yName,
-                    Color = colors[colorIndex % colors.Length],
-                    StrokeThickness = 2
-                };
-
-                // Add data points
-                for (int i = 0; i < Math.Min(xValues.Count, yValues.Count); i++)
-                {
-                    series.Points.Add(new DataPoint(xValues[i], yValues[i]));
-                }
-
-                model.Series.Add(series);
-                colorIndex++;
-            }
-
-            // Update the plot model
-            _viewModel.PlotModel = model;
-        }
+        // No other methods should be present here unless they are specifically
+        // for UI interaction logic confined to this view (e.g., handling a button click
+        // within the PlotView itself, which is unlikely for a simple display view).
+        // The UpdateFromIntegralTable method was removed as that logic now resides
+        // in the MainWindowViewModel's OnPlotCreated handler.
     }
 }

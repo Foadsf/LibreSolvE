@@ -37,7 +37,10 @@ namespace LibreSolvE.GUI.ViewModels
 
         public void UpdateFromIntegralTable(Dictionary<string, List<double>> integralTable)
         {
-            TableData = integralTable;
+            Serilog.Log.Debug("[IntegralTableVM] UpdateFromIntegralTable called with {Count} columns.", integralTable?.Count ?? 0);
+            TableData = integralTable ?? new Dictionary<string, List<double>>(); // Assign the data
+            Serilog.Log.Debug("[IntegralTableVM] TableData property set. RowCount={RowCount}, Columns={ColumnCount}", RowCount, ColumnNames.Count);
+            // RefreshColumnNames() and UpdateRowCount() are called automatically by the setter's logic
         }
 
         private void RefreshColumnNames()

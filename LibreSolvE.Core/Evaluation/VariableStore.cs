@@ -18,11 +18,25 @@ public class VariableStore
     private readonly Dictionary<string, string> _units =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+    private readonly HashSet<string> _solvedVariables =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
     public void SetVariable(string name, double value)
     {
         _variables[name] = value;
         _explicitVariables.Add(name);
+        _solvedVariables.Remove(name); // Explicit setting overrides solved status
     }
+
+    // Method to be called by the solver
+    public void SetSolvedVariable(string name, double value)
+    {
+        _variables[name] = value;
+        _explicitVariables.Remove(name); // Ensure it's not marked as explicit
+        _solvedVariables.Add(name);      // Mark as solved
+    }
+
+    public bool IsSolvedSet(string name) => _solvedVariables.Contains(name);
 
     public double GetVariable(string name)
     {
@@ -75,9 +89,7 @@ public class VariableStore
             Console.WriteLine("(empty)");
             return;
         }
-
         var allVars = _variables.Keys.OrderBy(k => k);
-
         foreach (var varName in allVars)
         {
             double value = _variables[varName];
@@ -85,20 +97,12 @@ public class VariableStore
             string unitDisplay = string.IsNullOrEmpty(unitStr) ? "" : $" [{unitStr}]";
             string source;
 
-            if (IsExplicitlySet(varName))
-            {
-                source = "explicit";
-            }
-            else if (HasGuessValue(varName))
-            {
-                source = "guess";
-            }
-            else
-            {
-                source = "default";
-            }
-            Console.WriteLine($"  {varName,-15} = {value,-20}{unitDisplay} ({source})");
+            if (IsExplicitlySet(varName)) source = "Explicit";
+            else if (IsSolvedSet(varName)) source = "Solved"; // Check solved status
+            else if (HasGuessValue(varName)) source = "Guess";
+            else source = "Default";
 
+            Console.WriteLine($"  {varName,-15} = {value,-20}{unitDisplay} ({source})");
         }
         Console.WriteLine("----------------------");
     }

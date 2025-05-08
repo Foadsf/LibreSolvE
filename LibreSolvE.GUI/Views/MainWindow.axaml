@@ -1,9 +1,9 @@
- <!-- LibreSolvE.GUI/Views/MainWindow.axaml -->
 <Window xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="using:LibreSolvE.GUI.ViewModels"
     xmlns:views="clr-namespace:LibreSolvE.GUI.Views"
     xmlns:oxy="clr-namespace:OxyPlot.Avalonia;assembly=OxyPlot.Avalonia"
+    xmlns:local="using:LibreSolvE.GUI"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d" d:DesignWidth="1024" d:DesignHeight="768"
@@ -11,6 +11,10 @@
     x:DataType="vm:MainWindowViewModel"
     Icon="/Assets/avalonia-logo.ico"
     Title="LibreSolvE">
+
+    <Window.Resources>
+        <local:EmptyStringToGrayConverter x:Key="EmptyStringToGrayConverter" />
+    </Window.Resources>
 
     <Design.DataContext>
         <vm:MainWindowViewModel />
@@ -76,81 +80,90 @@
                             Margin="5"
                             FontWeight="Bold" />
 
+                        <!-- Add headers for the columns -->
+                        <Grid DockPanel.Dock="Top" Margin="5,10,5,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0" Text="Name" FontWeight="Bold" />
+                            <TextBlock Grid.Column="1" Text="Value" FontWeight="Bold" />
+                            <TextBlock Grid.Column="2" Text="Units" FontWeight="Bold" />
+                            <TextBlock Grid.Column="3" Text="Source" FontWeight="Bold" />
+                        </Grid>
+
+                        <!-- Horizontal line under headers -->
+                        <Rectangle DockPanel.Dock="Top" Height="1" Fill="Gray" Margin="5,2,5,5" />
+
+                        <!-- Warning message -->
                         <TextBlock DockPanel.Dock="Bottom"
                             Text="If you're seeing this but no data in the grid, there may be a display issue"
                             Margin="5"
-                            Foreground="Red" />
+                            Foreground="Red"
+                            IsVisible="{Binding !SolutionVM.Variables.Count}" />
 
-                        <!-- Super simple approach with ItemsControl -->
+                        <!-- Solution data -->
                         <ScrollViewer>
-                            <StackPanel>
-                                <!-- Header -->
-                                <Grid Background="LightGray" Margin="5">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
+                            <ItemsControl ItemsSource="{Binding SolutionVM.Variables}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
 
-                                    <TextBlock Grid.Column="0" Text="Variable" FontWeight="Bold"
-                                        Margin="5" />
-                                    <TextBlock Grid.Column="1" Text="Value" FontWeight="Bold"
-                                        Margin="5" />
-                                    <TextBlock Grid.Column="2" Text="Units" FontWeight="Bold"
-                                        Margin="5" />
-                                    <TextBlock Grid.Column="3" Text="Source" FontWeight="Bold"
-                                        Margin="5" />
-                                </Grid>
-
-                                <!-- Items -->
-                                <ItemsControl ItemsSource="{Binding SolutionVM.Variables}"
-                                    Margin="5">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid Margin="0,2">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-
-                                                <TextBlock Grid.Column="0" Text="{Binding Name}"
-                                                    Margin="5,0" />
-                                                <TextBlock Grid.Column="1"
-                                                    Text="{Binding Value, StringFormat='F6'}"
-                                                    Margin="5,0" />
-                                                <TextBlock Grid.Column="2" Text="{Binding Units}"
-                                                    Margin="5,0" />
-                                                <TextBlock Grid.Column="3" Text="{Binding Source}"
-                                                    Margin="5,0" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
+                                            <TextBlock Grid.Column="0" Text="{Binding Name}"
+                                                Margin="5,0" />
+                                            <TextBlock Grid.Column="1"
+                                                Text="{Binding Value, StringFormat=F6}"
+                                                Margin="5,0" />
+                                            <TextBlock Grid.Column="2" Text="{Binding Units}"
+                                                Foreground="{Binding Units, Converter={StaticResource EmptyStringToGrayConverter}}"
+                                                Margin="5,0" />
+                                            <TextBlock Grid.Column="3" Text="{Binding Source}"
+                                                Margin="5,0" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </ScrollViewer>
                     </DockPanel>
                 </TabItem>
                 <TabItem Header="Plots">
-                    <!-- This will host one or more PlotViews. For simplicity, let's show the first
-                    plot. -->
-                    <!-- For multiple plots, a TabControl or ItemsControl within this TabItem would
-                    be needed. -->
-                    <ContentControl Content="{Binding PlotViewModels[0]}"
-                        IsVisible="{Binding PlotViewModels.Count}" />
-                    <!-- Or use an ItemsControl if you want to show all plots (e.g., stacked or in
-                    their own tabs) -->
-                    <!--
-                     <ItemsControl ItemsSource="{Binding PlotViewModels}">
-                         <ItemsControl.ItemTemplate>
-                             <DataTemplate>
-                                 <views:PlotView DataContext="{Binding}" Height="400" Margin="5"/>
-                             </DataTemplate>
-                         </ItemsControl.ItemTemplate>
-                     </ItemsControl>
-                     -->
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top"
+                            Text="{Binding PlotViewModels.Count, StringFormat='Plots found: {0}'}"
+                            Margin="5"
+                            FontWeight="Bold" />
+
+                        <TextBlock DockPanel.Dock="Bottom"
+                            Text="No plots available. Run a file with PLOT commands."
+                            Margin="5"
+                            IsVisible="{Binding !PlotViewModels.Count}" />
+
+                        <!-- Display plots using ItemsControl -->
+                        <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding PlotViewModels}" Margin="5">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:PlotViewModel">
+                                        <!-- Ensure views:PlotView exists and its DataContext is set -->
+                                        <views:PlotView Height="450" Margin="0,5" />
+                                        <!-- If PlotView just wraps oxy:PlotView and VM has
+                                        PlotModel property: -->
+                                        <!-- <oxy:PlotView Model="{Binding PlotModel}" Height="450"
+                                        Margin="0,5" /> -->
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </DockPanel>
                 </TabItem>
                 <TabItem Header="Raw Output">
                     <TextBox Text="{Binding OutputText}" IsReadOnly="True" Margin="5"
@@ -182,14 +195,7 @@
                             <ItemsControl ItemsSource="{Binding DebugLogVM.Logs}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <TextBox Text="{Binding}"
-                                            IsReadOnly="True"
-                                            Background="Transparent"
-                                            BorderThickness="0"
-                                            TextWrapping="NoWrap"
-                                            FontFamily="Consolas,Monospace"
-                                            FontSize="11"
-                                            Margin="0,1" />
+                                        <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="2" />
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>

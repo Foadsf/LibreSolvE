@@ -380,6 +380,7 @@ public class StatementExecutor
 
     private void ExecuteIntegralDefinitions()
     {
+        // ... (setup code, loop through _integralDefinitions) ...
         Console.WriteLine($"--- Executing Integral Definitions ({_integralDefinitions.Count} found) ---");
         if (_integralDefinitions.Count == 0 && _algebraicEquations.Any(eq => ContainsDerivativeTerm(eq)))
         {
@@ -406,6 +407,7 @@ public class StatementExecutor
 
         foreach (var integralAssignNode in _integralDefinitions)
         {
+            // ... (get dependentVarNode, integralCallNode, arguments, initialValueY) ...
             var dependentVarNode = integralAssignNode.Variable;
             var integralCallNode = (FunctionCallNode)integralAssignNode.RightHandSide;
 
@@ -461,7 +463,8 @@ public class StatementExecutor
             Console.WriteLine($"    Independent Var: {indepVarName}");
             Console.WriteLine($"    Derivative Var: {dydtVarName}, determined by system: [{string.Join(" ; ", relevantEquationsForDydt)}]");
 
-
+            // --- Solving ODE ---
+            // ... (create odeSolver instance) ...
             var odeSolver = new OdeSolver(
                 _variableStore,
                 _functionRegistry,
@@ -479,7 +482,14 @@ public class StatementExecutor
             ConfigureOdeSolver(odeSolver);
 
             double finalY = odeSolver.Solve();
-            _variableStore.SetVariable(dependentVarNode.Name, finalY);
+
+            string? originalUnit = _variableStore.HasUnit(dependentVarNode.Name) ? _variableStore.GetUnit(dependentVarNode.Name) : null;
+            _variableStore.SetSolvedVariable(dependentVarNode.Name, finalY); // Sets value, marks as solved
+            if (originalUnit != null)
+            {
+                _variableStore.SetUnit(dependentVarNode.Name, originalUnit); // Re-apply original unit if it existed
+            }
+
             Console.WriteLine($"ODE for '{dependentVarNode.Name}' solved. Final value: {finalY} at t={upperLimit}");
 
             if (_integralTableColumns.Count > 0 && !string.IsNullOrEmpty(_integralTableIndVarName) &&
@@ -561,9 +571,10 @@ public class StatementExecutor
 
         string specPart = directiveText.Substring("$IntegralTable".Length).Trim();
 
+        // Updated regex to allow variable names (not just numeric literals) in step size
         // Regex to capture: VarName[:StepSize], Col1, Col2, ... // Comment
         // Allows VarName, VarName:Step, VarName, Col1, VarName:Step, Col1
-        var match = Regex.Match(specPart, @"^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::\s*([0-9\.]+))?\s*(?:,(.*))?$");
+        var match = Regex.Match(specPart, @"^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::\s*([a-zA-Z0-9_\.]+))?\s*(?:,(.*))?$");
 
         if (!match.Success)
         {
@@ -581,13 +592,22 @@ public class StatementExecutor
 
         if (match.Groups[2].Success && !string.IsNullOrWhiteSpace(match.Groups[2].Value))
         {
-            if (double.TryParse(match.Groups[2].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double step))
+            string stepValue = match.Groups[2].Value;
+
+            // Try to parse as a number first
+            if (double.TryParse(stepValue, NumberStyles.Any, CultureInfo.InvariantCulture, out double step))
             {
                 _integralTableOutputStepSize = step;
             }
+            // If not a number, try to get it from the variable store
+            else if (_variableStore.HasVariable(stepValue))
+            {
+                _integralTableOutputStepSize = _variableStore.GetVariable(stepValue);
+                Console.WriteLine($"Using variable '{stepValue}' with value {_integralTableOutputStepSize} for output step size.");
+            }
             else
             {
-                Console.Error.WriteLine($"Warning: Could not parse step size '{match.Groups[2].Value}' in $IntegralTable. Using solver steps.");
+                Console.WriteLine($"Warning: Could not interpret step size '{stepValue}' in $IntegralTable as a number or variable. Using solver steps.");
             }
         }
 

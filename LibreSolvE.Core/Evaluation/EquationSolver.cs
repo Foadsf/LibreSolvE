@@ -162,39 +162,69 @@ public class EquationSolver
         var finalValue = result.FunctionInfoAtMinimum.Value;
 
         // Apply solution to variable store
-        solverFactory.ApplyVariableValues(solution);
+        // solverFactory.ApplyVariableValues(solution);
+        ApplySolvedVariableValues(solution);
 
         // Calculate final residuals
-        double sumSq = 0.0;
-        for (int i = 0; i < _equations.Count; i++)
-        {
-            double lhs = _evaluator.Evaluate(_equations[i].LeftHandSide);
-            double rhs = _evaluator.Evaluate(_equations[i].RightHandSide);
-            double res = lhs - rhs;
-            sumSq += res * res;
-        }
-
+        double sumSq = CalculateSumSquaredResiduals(solution); // Pass solution vector
         double finalResidualNorm = Math.Sqrt(sumSq);
 
         Console.WriteLine("--- Solver Finished ---");
         Console.WriteLine($"Final Objective Value: {finalValue}");
         Console.WriteLine($"Final Residual L2 Norm: {finalResidualNorm}");
 
-        // Check convergence
-        bool converged = finalResidualNorm < 1e-2; // More relaxed tolerance
+        // Check convergence (use a smaller tolerance for actual convergence check)
+        bool converged = finalResidualNorm < _solverSettings.Tolerance;
 
         if (converged)
         {
-            Console.WriteLine("--- Solution Converged, Updating Variable Store ---");
+            Console.WriteLine("--- Solution Converged ---");
+            // Values are already set via ApplySolvedVariableValues
             return true;
         }
         else
         {
             Console.Error.WriteLine($"Solver did not converge sufficiently (Residual Norm: {finalResidualNorm})");
             Console.WriteLine("Final values (might be inaccurate):");
+            // Apply the non-converged solution for inspection if desired
+            // ApplySolvedVariableValues(solution); // Or leave the store as it was before solve started
             _variableStore.PrintVariables();
             return false;
         }
+    }
+
+    // Helper to apply solved values
+    private void ApplySolvedVariableValues(Vector<double> x)
+    {
+        for (int i = 0; i < _variablesToSolve.Count; i++)
+        {
+            string varName = _variablesToSolve[i];
+            _variableStore.SetSolvedVariable(varName, x[i]); // Use the new method
+        }
+    }
+
+    // Helper to calculate residuals using a specific parameter vector
+    private double CalculateSumSquaredResiduals(Vector<double> parameters)
+    {
+        // Temporarily apply values, calculate, restore
+        var factory = new SolverFactory(_variableStore, _functionRegistry, _equations, _variablesToSolve, _solverSettings);
+        factory.ApplyVariableValues(parameters);
+        double sumOfSquares = 0.0;
+        try
+        {
+            for (int i = 0; i < _equations.Count; i++)
+            {
+                double lhs = _evaluator.Evaluate(_equations[i].LeftHandSide);
+                double rhs = _evaluator.Evaluate(_equations[i].RightHandSide);
+                double residual = lhs - rhs;
+                sumOfSquares += residual * residual;
+            }
+        }
+        finally
+        {
+            factory.RestoreVariableValues();
+        }
+        return sumOfSquares;
     }
 
     private bool SolveWithLevenbergMarquardt(SolverFactory solverFactory)

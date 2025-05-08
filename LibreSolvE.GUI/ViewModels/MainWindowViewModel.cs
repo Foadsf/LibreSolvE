@@ -1,15 +1,15 @@
 ﻿// Fixed version of MainWindowViewModel.cs
-using Avalonia.Controls; // Fix for Window reference
-using Avalonia.Platform.Storage; // For IStorageProvider
+using Avalonia.Controls;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LibreSolvE.Core.Ast;
 using LibreSolvE.Core.Evaluation;
 using LibreSolvE.Core.Parsing;
-using LibreSolvE.Core.Plotting; // For PlotData
-using LibreSolvE.GUI.Views; // For PlotView
-using OxyPlot; // For PlotModel (OxyPlot's model)
+using LibreSolvE.Core.Plotting;
+using LibreSolvE.GUI.Views;
+using OxyPlot;
 using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -17,10 +17,11 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using System.Windows.Input; // For ICommand
-using Antlr4.Runtime; // For ANTLR parsing components
+using System.Windows.Input;
+using Antlr4.Runtime;
 using LibreSolvE.GUI.AOP;
 using LibreSolvE.GUI.Logging;
+using Serilog;
 
 namespace LibreSolvE.GUI.ViewModels
 {
@@ -474,111 +475,106 @@ namespace LibreSolvE.GUI.ViewModels
             capturedWriter.Write(message);
         }
 
+        [Log]
         private void OnPlotCreated(object? sender, PlotData plotData)
         {
-            // Add a null check for plotData itself
-            if (plotData == null)
+            Log.Debug("OnPlotCreated event handler started.");
+            try // Wrap the whole handler
             {
-                Debug.WriteLine("OnPlotCreated received null plotData. Plot will not be displayed.");
-                StatusText = "Warning: Plot data was not generated correctly.";
-                return;
-            }
-
-            // Ensure Settings is not null before accessing its members
-            string title = "Plot"; // Default title
-            string xLabel = "X-Axis";
-            string yLabel = "Y-Axis";
-            bool showGrid = true;
-            bool showLegend = true;
-
-            if (plotData.Settings != null) // Check if Settings itself is null
-            {
-                title = string.IsNullOrEmpty(plotData.Settings.Title) ? "Plot" : plotData.Settings.Title;
-                xLabel = string.IsNullOrEmpty(plotData.Settings.XLabel) ? "X-Axis" : plotData.Settings.XLabel;
-                yLabel = string.IsNullOrEmpty(plotData.Settings.YLabel) ? "Y-Axis" : plotData.Settings.YLabel;
-                showGrid = plotData.Settings.ShowGrid;
-                showLegend = plotData.Settings.ShowLegend;
-            }
-            else
-            {
-                Debug.WriteLine("OnPlotCreated: plotData.Settings is null. Using default plot settings.");
-            }
-
-            // Ensure this runs on the UI thread
-            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                var plotVM = new PlotViewModel();
-                var oxyModel = new PlotModel { Title = title }; // Use the safe title
-
-                oxyModel.Axes.Add(new OxyPlot.Axes.LinearAxis
+                // ... (null checks for plotData and plotData.Settings as before) ...
+                if (plotData == null)
                 {
-                    Position = OxyPlot.Axes.AxisPosition.Bottom,
-                    Title = xLabel, // Use safe xLabel
-                    MajorGridlineStyle = showGrid ? LineStyle.Solid : LineStyle.None,
-                    MinorGridlineStyle = showGrid ? LineStyle.Dot : LineStyle.None
-                });
-                oxyModel.Axes.Add(new OxyPlot.Axes.LinearAxis
-                {
-                    Position = OxyPlot.Axes.AxisPosition.Left,
-                    Title = yLabel, // Use safe yLabel
-                    MajorGridlineStyle = showGrid ? LineStyle.Solid : LineStyle.None,
-                    MinorGridlineStyle = showGrid ? LineStyle.Dot : LineStyle.None
-                });
-
-                if (showLegend) // Use safe showLegend
-                {
-                    oxyModel.IsLegendVisible = true;
-                    // Fix: Use available properties in OxyPlot
-                    // oxyModel.LegendPosition = OxyPlot.LegendPosition.RightTop;
-                    // oxyModel.LegendPlacement = OxyPlot.LegendPlacement.Inside;
+                    Log.Warning("OnPlotCreated received null plotData.");
+                    StatusText = "Warning: Plot data generation failed.";
+                    return;
                 }
+                string title = plotData.Settings?.Title ?? "Plot";
+                string xLabel = plotData.Settings?.XLabel ?? "X-Axis";
+                string yLabel = plotData.Settings?.YLabel ?? "Y-Axis";
+                bool showGrid = plotData.Settings?.ShowGrid ?? true;
+                bool showLegend = plotData.Settings?.ShowLegend ?? true;
+                Log.Debug("Plot settings retrieved: Title='{Title}'", title);
 
-                var defaultColors = new OxyColor[]
-                {
-                    OxyColors.Blue, OxyColors.Red, OxyColors.Green, OxyColors.Orange,
-                    OxyColors.Purple, OxyColors.Brown, OxyColors.Magenta, OxyColors.Teal
-                };
-                int colorIndex = 0;
 
-                if (plotData.Series != null) // Check if Series collection is null
+                // Ensure this runs on the UI thread
+                Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    foreach (var seriesData in plotData.Series)
+                    Log.Debug("Executing plot creation on UI thread.");
+                    try
                     {
-                        if (seriesData == null) continue; // Skip null series data
+                        var plotVM = new PlotViewModel(); // Each plot needs its own ViewModel
+                        var oxyModel = new PlotModel { Title = title };
 
-                        var lineSeries = new OxyPlot.Series.LineSeries
-                        {
-                            Title = seriesData.Name ?? "Series", // Handle null series name
-                            StrokeThickness = 2
-                        };
+                        // Configure Axes
+                        oxyModel.Axes.Add(new OxyPlot.Axes.LinearAxis { Position = OxyPlot.Axes.AxisPosition.Bottom, Title = xLabel, MajorGridlineStyle = showGrid ? LineStyle.Solid : LineStyle.None, MinorGridlineStyle = showGrid ? LineStyle.Dot : LineStyle.None });
+                        oxyModel.Axes.Add(new OxyPlot.Axes.LinearAxis { Position = OxyPlot.Axes.AxisPosition.Left, Title = yLabel, MajorGridlineStyle = showGrid ? LineStyle.Solid : LineStyle.None, MinorGridlineStyle = showGrid ? LineStyle.Dot : LineStyle.None });
+                        if (showLegend) { oxyModel.IsLegendVisible = true; }
 
-                        // Try to parse color string, fallback to default
-                        try
+                        var defaultColors = new OxyColor[] { OxyColors.Blue, OxyColors.Red, /* ... */ };
+                        int colorIndex = 0;
+
+                        // Check Series Collection
+                        if (plotData.Series == null || !plotData.Series.Any())
                         {
-                            lineSeries.Color = !string.IsNullOrEmpty(seriesData.Color) ?
-                                               OxyColor.Parse(seriesData.Color) :
-                                               defaultColors[colorIndex % defaultColors.Length];
+                            Log.Warning("PlotData contains no Series.");
+                            // Optionally add annotation about no data
+                            oxyModel.Annotations.Add(new OxyPlot.Annotations.TextAnnotation { Text = "No series data available" /* ... */ });
                         }
-                        catch
+                        else
                         {
-                            lineSeries.Color = defaultColors[colorIndex % defaultColors.Length];
-                        }
-
-                        if (seriesData.XValues != null && seriesData.YValues != null) // Check XValues and YValues
-                        {
-                            for (int i = 0; i < seriesData.XValues.Count && i < seriesData.YValues.Count; i++)
+                            foreach (var seriesData in plotData.Series)
                             {
-                                lineSeries.Points.Add(new DataPoint(seriesData.XValues[i], seriesData.YValues[i]));
+                                // ... (null checks for seriesData, XValues, YValues as before) ...
+                                if (seriesData == null || seriesData.XValues == null || seriesData.YValues == null || !seriesData.XValues.Any())
+                                {
+                                    Log.Warning("Skipping invalid series data: {SeriesName}", seriesData?.Name ?? "Unnamed");
+                                    continue;
+                                }
+
+                                var lineSeries = new OxyPlot.Series.LineSeries { /* ... */ };
+                                int pointCount = 0;
+                                for (int i = 0; i < Math.Min(seriesData.XValues.Count, seriesData.YValues.Count); i++)
+                                {
+                                    double x = seriesData.XValues[i];
+                                    double y = seriesData.YValues[i];
+                                    // Check for invalid plot points
+                                    if (!double.IsFinite(x) || !double.IsFinite(y))
+                                    {
+                                        Log.Warning("Skipping invalid point ({X}, {Y}) in series {SeriesName}", x, y, lineSeries.Title);
+                                        continue;
+                                    }
+                                    lineSeries.Points.Add(new DataPoint(x, y));
+                                    pointCount++;
+                                }
+                                Log.Debug("Added series {SeriesName} with {PointCount} valid points", lineSeries.Title, pointCount);
+                                if (pointCount > 0) // Only add series if it has points
+                                {
+                                    oxyModel.Series.Add(lineSeries);
+                                    colorIndex++;
+                                }
                             }
                         }
-                        oxyModel.Series.Add(lineSeries);
-                        colorIndex++;
+
+                        // Use InitializePlotModel which handles internal state correctly
+                        plotVM.InitializePlotModel(oxyModel);
+                        plotVM.LogPlotDetails(); // Log details after setting
+                        PlotViewModels.Add(plotVM); // Add to the UI collection
+                        StatusText = $"Plot '{title}' displayed.";
+                        Log.Debug("PlotViewModel added to collection. Count: {Count}", PlotViewModels.Count);
                     }
-                }
-                plotVM.PlotModel = oxyModel;
-                PlotViewModels.Add(plotVM);
-                StatusText = $"Plot '{title}' displayed.";
-            });
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, "Error creating plot components on UI thread");
+                        StatusText = "Error creating plot. See debug log.";
+                    }
+                }); // End InvokeAsync
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Error in OnPlotCreated handler (before UI dispatch)");
+                StatusText = "Error processing plot data. See debug log.";
+            }
+            Log.Debug("OnPlotCreated event handler finished.");
         }
 
         public void DebugSolutionTab()
