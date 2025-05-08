@@ -1,4 +1,4 @@
-﻿// Fixed version of MainWindowViewModel.cs
+﻿// File: LibreSolvE.GUI/ViewModels/MainWindowViewModel.cs
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -8,8 +8,8 @@ using LibreSolvE.Core.Ast;
 using LibreSolvE.Core.Evaluation;
 using LibreSolvE.Core.Parsing;
 using LibreSolvE.Core.Plotting;
-using LibreSolvE.GUI.Views;
-using OxyPlot;
+using LibreSolvE.GUI.Views; // May need removal if PlotView is gone
+// REMOVE using OxyPlot;
 using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -22,9 +22,29 @@ using Antlr4.Runtime;
 using LibreSolvE.GUI.AOP;
 using LibreSolvE.GUI.Logging;
 using Serilog;
+using ScottPlot; // <--- ADD THIS
+using ScottPlot.Avalonia; // <-- ADD THIS
 
 namespace LibreSolvE.GUI.ViewModels
 {
+    // New class to hold ScottPlot data for the UI
+    public class ScottPlotViewModel : ViewModelBase
+    {
+        private Plot _plot = new(); // ScottPlot.Plot model
+        public Plot Plot
+        {
+            get => _plot;
+            set => SetProperty(ref _plot, value);
+        }
+
+        private string _title = "Plot";
+        public string Title
+        {
+            get => _title;
+            set => SetProperty(ref _title, value);
+        }
+    }
+
     public partial class MainWindowViewModel : ViewModelBase
     {
         private string _fileContent = "";
@@ -35,7 +55,7 @@ namespace LibreSolvE.GUI.ViewModels
 
         private EquationsViewModel _equationsVM = new EquationsViewModel();
         private SolutionViewModel _solutionVM = new SolutionViewModel();
-        private ObservableCollection<PlotViewModel> _plotViewModels = new ObservableCollection<PlotViewModel>();
+        private ObservableCollection<ScottPlotViewModel> _plotViewModels = new ObservableCollection<ScottPlotViewModel>();
 
         // private StatementExecutor? _executor; // Core executor instance
 
@@ -46,8 +66,6 @@ namespace LibreSolvE.GUI.ViewModels
             set => SetProperty(ref _integralTableVM, value);
         }
 
-        // Add this property that was missing
-        public PlotView? PlotView { get; set; }
 
         public string FileContent
         {
@@ -89,7 +107,7 @@ namespace LibreSolvE.GUI.ViewModels
             set => SetProperty(ref _solutionVM, value);
         }
 
-        public ObservableCollection<PlotViewModel> PlotViewModels
+        public ObservableCollection<ScottPlotViewModel> PlotViewModels
         {
             get => _plotViewModels;
             set => SetProperty(ref _plotViewModels, value);
@@ -115,10 +133,9 @@ namespace LibreSolvE.GUI.ViewModels
             OpenCommand = new AsyncRelayCommand(OpenFileAsync);
             SaveCommand = new AsyncRelayCommand(SaveFileAsync);
             SaveAsCommand = new AsyncRelayCommand(SaveFileAsAsync);
-            RunCommand = new RelayCommand(RunFile); // This is the method we are providing
+            RunCommand = new RelayCommand(RunFile);
             ExitCommand = new RelayCommand(() =>
             {
-                // Fix: Use Avalonia.Application instead of Application
                 if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktopApp)
                 {
                     desktopApp.Shutdown();
@@ -131,18 +148,16 @@ namespace LibreSolvE.GUI.ViewModels
 
             EquationsVM = new EquationsViewModel();
             SolutionVM = new SolutionViewModel();
-            PlotViewModels = new ObservableCollection<PlotViewModel>();
-            DebugLogVM = new DebugLogViewModel(); // Instantiate the DebugLog VM
+            // CHANGE Instantiation type
+            PlotViewModels = new ObservableCollection<ScottPlotViewModel>();
+            DebugLogVM = new DebugLogViewModel();
+            IntegralTableVM = new IntegralTableViewModel();
 
-            IntegralTableVM = new IntegralTableViewModel(); // Initialize the IntegralTableVM
-
-
-            // Two-way synchronization between FileContent and EquationsVM.EquationText
             this.PropertyChanged += (s, e) =>
             {
                 if (e.PropertyName == nameof(FileContent) && EquationsVM != null)
                 {
-                    if (EquationsVM.EquationText != FileContent) // Avoid feedback loop
+                    if (EquationsVM.EquationText != FileContent)
                         EquationsVM.EquationText = FileContent;
                 }
             };
@@ -151,7 +166,7 @@ namespace LibreSolvE.GUI.ViewModels
             {
                 if (e.PropertyName == nameof(EquationsViewModel.EquationText))
                 {
-                    if (FileContent != EquationsVM.EquationText) // Avoid feedback loop
+                    if (FileContent != EquationsVM.EquationText)
                         FileContent = EquationsVM.EquationText;
                 }
             };
@@ -488,10 +503,9 @@ namespace LibreSolvE.GUI.ViewModels
         [Log]
         private void OnPlotCreated(object? sender, PlotData plotData)
         {
-            Log.Debug("OnPlotCreated event handler started.");
-            try // Wrap the whole handler
+            Log.Debug("OnPlotCreated event handler started (ScottPlot). Received PlotData: {PlotDataTitle}", plotData?.Settings?.Title ?? "null");
+            try
             {
-                // ... (null checks for plotData and plotData.Settings as before) ...
                 if (plotData == null)
                 {
                     Log.Warning("OnPlotCreated received null plotData.");
@@ -501,90 +515,94 @@ namespace LibreSolvE.GUI.ViewModels
                 string title = plotData.Settings?.Title ?? "Plot";
                 string xLabel = plotData.Settings?.XLabel ?? "X-Axis";
                 string yLabel = plotData.Settings?.YLabel ?? "Y-Axis";
-                bool showGrid = plotData.Settings?.ShowGrid ?? true;
-                bool showLegend = plotData.Settings?.ShowLegend ?? true;
-                Log.Debug("Plot settings retrieved: Title='{Title}'", title);
+                // ScottPlot grid can be enabled/disabled per axis later if needed
 
+                Log.Debug("Plot settings retrieved: Title='{Title}', XLabel='{XLabel}', YLabel='{YLabel}'", title, xLabel, yLabel);
 
                 // Ensure this runs on the UI thread
                 Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    Log.Debug("Executing plot creation on UI thread.");
+                    Log.Debug("Executing ScottPlot creation on UI thread for plot '{PlotTitle}'. Current PlotViewModels count: {Count}", title, PlotViewModels.Count);
                     try
                     {
-                        var plotVM = new PlotViewModel(); // Each plot needs its own ViewModel
-                        var oxyModel = new PlotModel { Title = title };
+                        // Create a ScottPlot Plot model
+                        var scottPlotModel = new ScottPlot.Plot();
+                        scottPlotModel.Title(title);
+                        scottPlotModel.XLabel(xLabel);
+                        scottPlotModel.YLabel(yLabel);
+                        scottPlotModel.ShowLegend(Alignment.UpperRight); // Enable legend, specify position
 
-                        // Configure Axes
-                        oxyModel.Axes.Add(new OxyPlot.Axes.LinearAxis { Position = OxyPlot.Axes.AxisPosition.Bottom, Title = xLabel, MajorGridlineStyle = showGrid ? LineStyle.Solid : LineStyle.None, MinorGridlineStyle = showGrid ? LineStyle.Dot : LineStyle.None });
-                        oxyModel.Axes.Add(new OxyPlot.Axes.LinearAxis { Position = OxyPlot.Axes.AxisPosition.Left, Title = yLabel, MajorGridlineStyle = showGrid ? LineStyle.Solid : LineStyle.None, MinorGridlineStyle = showGrid ? LineStyle.Dot : LineStyle.None });
-                        if (showLegend) { oxyModel.IsLegendVisible = true; }
-
-                        var defaultColors = new OxyColor[] { OxyColors.Blue, OxyColors.Red, /* ... */ };
-                        int colorIndex = 0;
-
-                        // Check Series Collection
+                        // Add series data
                         if (plotData.Series == null || !plotData.Series.Any())
                         {
-                            Log.Warning("PlotData contains no Series.");
-                            // Optionally add annotation about no data
-                            oxyModel.Annotations.Add(new OxyPlot.Annotations.TextAnnotation { Text = "No series data available" /* ... */ });
+                            Log.Warning("PlotData for '{PlotTitle}' contains no Series.", title);
+                            // Use Add.Annotation for ScottPlot 5
+                            scottPlotModel.Add.Annotation("No series data available", Alignment.MiddleCenter);
                         }
                         else
                         {
+                            Log.Debug("Processing {SeriesCount} series for ScottPlot '{PlotTitle}'", plotData.Series.Count, title);
                             foreach (var seriesData in plotData.Series)
                             {
-                                // ... (null checks for seriesData, XValues, YValues as before) ...
                                 if (seriesData == null || seriesData.XValues == null || seriesData.YValues == null || !seriesData.XValues.Any())
                                 {
-                                    Log.Warning("Skipping invalid series data: {SeriesName}", seriesData?.Name ?? "Unnamed");
+                                    Log.Warning("Skipping invalid series data: {SeriesName} in plot '{PlotTitle}'", seriesData?.Name ?? "Unnamed", title);
                                     continue;
                                 }
 
-                                var lineSeries = new OxyPlot.Series.LineSeries { /* ... */ };
-                                int pointCount = 0;
-                                for (int i = 0; i < Math.Min(seriesData.XValues.Count, seriesData.YValues.Count); i++)
+                                // Filter out NaN/Infinity before adding to ScottPlot
+                                var validPoints = seriesData.XValues
+                                    .Zip(seriesData.YValues, (x, y) => new { X = x, Y = y })
+                                    .Where(pt => double.IsFinite(pt.X) && double.IsFinite(pt.Y))
+                                    .ToList();
+
+                                if (validPoints.Any())
                                 {
-                                    double x = seriesData.XValues[i];
-                                    double y = seriesData.YValues[i];
-                                    // Check for invalid plot points
-                                    if (!double.IsFinite(x) || !double.IsFinite(y))
-                                    {
-                                        Log.Warning("Skipping invalid point ({X}, {Y}) in series {SeriesName}", x, y, lineSeries.Title);
-                                        continue;
-                                    }
-                                    lineSeries.Points.Add(new DataPoint(x, y));
-                                    pointCount++;
+                                    var xs = validPoints.Select(pt => pt.X).ToArray();
+                                    var ys = validPoints.Select(pt => pt.Y).ToArray();
+
+                                    var scatter = scottPlotModel.Add.Scatter(xs, ys);
+                                    // Use LegendText (preferred in ScottPlot 5) instead of Label
+                                    // CHANGE THIS LINE: Use LINQ Count() method
+                                    scatter.LegendText = seriesData.Name ?? $"Series {scottPlotModel.GetPlottables().Count()}";
+                                    // Corrected Log.Debug call parameters
+                                    // CHANGE THIS LINE: Use LINQ Count() method
+                                    Log.Debug("Added Scatter plot for series '{SeriesName}' with {PointCount} valid points to ScottPlot '{PlotTitle}'", scatter.LegendText, validPoints.Count, title);
                                 }
-                                Log.Debug("Added series {SeriesName} with {PointCount} valid points", lineSeries.Title, pointCount);
-                                if (pointCount > 0) // Only add series if it has points
+                                else
                                 {
-                                    oxyModel.Series.Add(lineSeries);
-                                    colorIndex++;
+                                    // Use LegendText here too for consistency in logging
+                                    Log.Warning("Series '{SeriesName}' for plot '{PlotTitle}' had no valid (finite) points and was not added.", seriesData.Name ?? "Unnamed", title);
                                 }
                             }
                         }
 
-                        // Use InitializePlotModel which handles internal state correctly
-                        plotVM.InitializePlotModel(oxyModel);
-                        plotVM.LogPlotDetails(); // Log details after setting
+                        scottPlotModel.Axes.AutoScale(); // Adjust axes limits based on data
+
+                        // Create the ViewModel for the plot
+                        var plotVM = new ScottPlotViewModel
+                        {
+                            Plot = scottPlotModel,
+                            Title = title // Store title separately if needed for UI elements outside plot
+                        };
+
                         PlotViewModels.Add(plotVM); // Add to the UI collection
                         StatusText = $"Plot '{title}' displayed.";
-                        Log.Debug("PlotViewModel added to collection. Count: {Count}", PlotViewModels.Count);
+                        Log.Debug("ScottPlotViewModel for '{PlotTitle}' added to PlotViewModels collection. New count: {Count}", title, PlotViewModels.Count);
                     }
                     catch (Exception ex)
                     {
-                        Log.Error(ex, "Error creating plot components on UI thread");
+                        Log.Error(ex, "Error creating ScottPlot components on UI thread for plot '{PlotTitle}'", title);
                         StatusText = "Error creating plot. See debug log.";
                     }
                 }); // End InvokeAsync
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "Error in OnPlotCreated handler (before UI dispatch)");
+                Log.Error(ex, "Error in OnPlotCreated handler (ScottPlot - before UI dispatch)");
                 StatusText = "Error processing plot data. See debug log.";
             }
-            Log.Debug("OnPlotCreated event handler finished.");
+            Log.Debug("OnPlotCreated event handler finished (ScottPlot).");
         }
 
         public void DebugSolutionTab()

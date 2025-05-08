@@ -2,21 +2,18 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="using:LibreSolvE.GUI.ViewModels"
     xmlns:views="clr-namespace:LibreSolvE.GUI.Views"
-    xmlns:oxy="clr-namespace:OxyPlot.Avalonia;assembly=OxyPlot.Avalonia"
     xmlns:local="using:LibreSolvE.GUI"
+    xmlns:sp="clr-namespace:ScottPlot.Avalonia;assembly=ScottPlot.Avalonia"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    mc:Ignorable="d" d:DesignWidth="1024" d:DesignHeight="768"
-    x:Class="LibreSolvE.GUI.Views.MainWindow"
-    x:DataType="vm:MainWindowViewModel"
-    Icon="/Assets/avalonia-logo.ico"
-    Title="LibreSolvE">
-
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="d"
+    d:DesignWidth="1024" d:DesignHeight="768" x:Class="LibreSolvE.GUI.Views.MainWindow"
+    x:DataType="vm:MainWindowViewModel" Icon="/Assets/avalonia-logo.ico" Title="LibreSolvE">
     <Window.Resources>
         <local:EmptyStringToGrayConverter x:Key="EmptyStringToGrayConverter" />
     </Window.Resources>
 
     <Design.DataContext>
+        <!-- This DataContext is only used for Design Time -->
         <vm:MainWindowViewModel />
     </Design.DataContext>
 
@@ -33,7 +30,6 @@
             <MenuItem Header="_Run">
                 <MenuItem Header="_Execute" Command="{Binding RunCommand}" />
             </MenuItem>
-            <!-- TODO: Add other EES menus: Edit, Options, Calculate, Tables, Plot, Windows, Help -->
         </Menu>
 
         <!-- Status Bar -->
@@ -48,7 +44,7 @@
 
         <!-- Main Content Area -->
         <!-- Using a Grid to simulate EES layout: Equations on left, Results/Plots on right -->
-        <Grid>
+        <Grid> <!-- This is the Grid starting around line 51 -->
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" MinWidth="300" /> <!-- Equations -->
                 <ColumnDefinition Width="Auto" /> <!-- GridSplitter -->
@@ -58,7 +54,6 @@
             <!-- Equations Panel -->
             <DockPanel Grid.Column="0">
                 <TextBlock DockPanel.Dock="Top" Text="Equations" Margin="5" FontWeight="Bold" />
-                <!-- This TextBox will be bound to MainWindowViewModel.EquationsVM.EquationText -->
                 <TextBox Text="{Binding EquationsVM.EquationText}"
                     AcceptsReturn="True"
                     TextWrapping="NoWrap"
@@ -73,6 +68,7 @@
 
             <!-- Right Panel: Results and Plots (Tabbed or Stacked) -->
             <TabControl Grid.Column="2" Margin="5" SelectionChanged="TabControl_SelectionChanged">
+
                 <TabItem Header="Solution">
                     <DockPanel>
                         <TextBlock DockPanel.Dock="Top"
@@ -80,7 +76,7 @@
                             Margin="5"
                             FontWeight="Bold" />
 
-                        <!-- Add headers for the columns -->
+                        <!-- Headers for the columns -->
                         <Grid DockPanel.Dock="Top" Margin="5,10,5,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -88,14 +84,11 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-
                             <TextBlock Grid.Column="0" Text="Name" FontWeight="Bold" />
                             <TextBlock Grid.Column="1" Text="Value" FontWeight="Bold" />
                             <TextBlock Grid.Column="2" Text="Units" FontWeight="Bold" />
                             <TextBlock Grid.Column="3" Text="Source" FontWeight="Bold" />
                         </Grid>
-
-                        <!-- Horizontal line under headers -->
                         <Rectangle DockPanel.Dock="Top" Height="1" Fill="Gray" Margin="5,2,5,5" />
 
                         <!-- Warning message -->
@@ -117,12 +110,10 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
-
                                             <TextBlock Grid.Column="0" Text="{Binding Name}"
                                                 Margin="5,0" />
                                             <TextBlock Grid.Column="1"
-                                                Text="{Binding Value, StringFormat=F6}"
-                                                Margin="5,0" />
+                                                Text="{Binding Value, StringFormat=F6}" Margin="5,0" />
                                             <TextBlock Grid.Column="2" Text="{Binding Units}"
                                                 Foreground="{Binding Units, Converter={StaticResource EmptyStringToGrayConverter}}"
                                                 Margin="5,0" />
@@ -135,6 +126,7 @@
                         </ScrollViewer>
                     </DockPanel>
                 </TabItem>
+
                 <TabItem Header="Plots">
                     <DockPanel>
                         <TextBlock DockPanel.Dock="Top"
@@ -147,43 +139,37 @@
                             Margin="5"
                             IsVisible="{Binding !PlotViewModels.Count}" />
 
-                        <!-- Display plots using ItemsControl -->
-                        <ScrollViewer HorizontalScrollBarVisibility="Disabled"
-                            VerticalScrollBarVisibility="Auto">
-                            <ItemsControl ItemsSource="{Binding PlotViewModels}" Margin="5">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:PlotViewModel">
-                                        <!-- Ensure views:PlotView exists and its DataContext is set -->
-                                        <views:PlotView Height="450" Margin="0,5" />
-                                        <!-- If PlotView just wraps oxy:PlotView and VM has
-                                        PlotModel property: -->
-                                        <!-- <oxy:PlotView Model="{Binding PlotModel}" Height="450"
-                                        Margin="0,5" /> -->
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </ScrollViewer>
+                        <!-- Display plots using ItemsControl with our wrapper -->
+                        <ItemsControl ItemsSource="{Binding PlotViewModels}" Margin="5">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ScottPlotViewModel">
+                                    <!-- Use our new ScottPlotView wrapper -->
+                                    <views:ScottPlotView PlotSource="{Binding Plot}" Height="450"
+                                        Margin="0,5" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
                     </DockPanel>
                 </TabItem>
+
                 <TabItem Header="Raw Output">
                     <TextBox Text="{Binding OutputText}" IsReadOnly="True" Margin="5"
                         AcceptsReturn="True" TextWrapping="Wrap"
                         ScrollViewer.VerticalScrollBarVisibility="Auto"
                         FontFamily="Consolas,Monospace" />
                 </TabItem>
-                <!-- TODO: Add tabs for Parametric Table, Lookup Table, Arrays, Residuals, Formatted
-                Equations etc. -->
+
                 <TabItem Header="Integral Table">
                     <DockPanel LastChildFill="True">
-                        <views:IntegralTableView
-                            Height="550"
+                        <views:IntegralTableView Height="550"
                             DataContext="{Binding IntegralTableVM}"
                             Margin="5" />
                     </DockPanel>
                 </TabItem>
+
                 <TabItem Header="Debug Log">
                     <DockPanel>
-                        <!-- Add button panel at the top -->
                         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8"
                             Margin="5">
                             <Button Content="Copy All to Clipboard"
@@ -193,8 +179,6 @@
                             <Button Content="Clear Log"
                                 Command="{Binding DebugLogVM.ClearLogCommand}" />
                         </StackPanel>
-
-                        <!-- Use a TextBox for each log entry -->
                         <ScrollViewer VerticalScrollBarVisibility="Auto"
                             HorizontalScrollBarVisibility="Auto">
                             <ItemsControl ItemsSource="{Binding DebugLogVM.Logs}">
@@ -207,7 +191,15 @@
                         </ScrollViewer>
                     </DockPanel>
                 </TabItem>
-            </TabControl>
-        </Grid>
-    </DockPanel>
-</Window>
+
+            </TabControl> <!--
+            This closes the TabControl -->
+
+        </Grid> <!--
+        This closes the main content Grid -->
+
+    </DockPanel> <!--
+    This closes the root DockPanel -->
+
+</Window> <!--
+This closes the Window -->
