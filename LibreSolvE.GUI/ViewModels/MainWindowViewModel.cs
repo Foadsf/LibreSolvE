@@ -1,6 +1,7 @@
 ﻿// Fixed version of MainWindowViewModel.cs
 using Avalonia.Controls; // Fix for Window reference
 using Avalonia.Platform.Storage; // For IStorageProvider
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LibreSolvE.Core.Ast;
@@ -19,6 +20,7 @@ using System.Threading.Tasks;
 using System.Windows.Input; // For ICommand
 using Antlr4.Runtime; // For ANTLR parsing components
 using LibreSolvE.GUI.AOP;
+using LibreSolvE.GUI.Logging;
 
 namespace LibreSolvE.GUI.ViewModels
 {
@@ -346,32 +348,22 @@ namespace LibreSolvE.GUI.ViewModels
                     executor = new StatementExecutor(variableStore, functionRegistry, solverSettings); // Use local instance
                     executor.PlotCreated += OnPlotCreated; // Subscribe to plot event
 
-                    LogCaptured(capturedConsoleWriter, "Executing initial statements and ODEs...\n");
+                    LogAttribute.LogMessage("Executing initial statements and ODEs...");
                     executor.Execute(fileNode); // Process assignments, ODEs, directives
-                    LogCaptured(capturedConsoleWriter, "Initial execution phase complete.\n");
+                    LogAttribute.LogMessage("Initial execution phase complete.");
 
                     // --- Log Variable State Before Algebraic Solve ---
-                    LogCaptured(capturedConsoleWriter, "Variable Store State BEFORE Algebraic Solve:\n");
-                    // Temporarily redirect for PrintVariables
-                    TextWriter tempOut = Console.Out;
-                    Console.SetOut(capturedConsoleWriter);
-                    variableStore.PrintVariables();
-                    Console.SetOut(tempOut);
-                    // ---
+                    LogAttribute.LogMessage("Variable Store State BEFORE Algebraic Solve:");
+                    VariableStoreLogger.LogVariableStoreContents("Before Solve", variableStore);
 
                     // 6. Solve Remaining Algebraic Equations
-                    LogCaptured(capturedConsoleWriter, "Solving algebraic equations...\n");
+                    LogAttribute.LogMessage("Solving algebraic equations...");
                     solveSuccess = executor.SolveRemainingAlgebraicEquations(); // Attempt to solve the system
-                    LogCaptured(capturedConsoleWriter, $"Algebraic solve attempt {(solveSuccess ? "succeeded" : "failed")}.\n");
+                    LogAttribute.LogMessage("Algebraic solve attempt {Result}", solveSuccess ? "succeeded" : "failed");
 
                     // --- Log Variable State After Algebraic Solve ---
-                    LogCaptured(capturedConsoleWriter, "Variable Store State AFTER Algebraic Solve:\n");
-                    // Temporarily redirect for PrintVariables
-                    tempOut = Console.Out;
-                    Console.SetOut(capturedConsoleWriter);
-                    variableStore.PrintVariables();
-                    Console.SetOut(tempOut);
-                    // ---
+                    LogAttribute.LogMessage("Variable Store State AFTER Algebraic Solve:");
+                    VariableStoreLogger.LogVariableStoreContents("After Solve", variableStore);
 
                     // 7. Update Status Text
                     StatusText = solveSuccess ? "Execution complete. Solver converged." : "Execution complete. Solver did NOT converge or no algebraic equations to solve.";
@@ -414,8 +406,27 @@ namespace LibreSolvE.GUI.ViewModels
                 // Update the structured solution view, even if solve failed (might show intermediate values)
                 if (variableStore != null)
                 {
-                    Debug.WriteLine($"--- Attempting to update SolutionVM with {variableStore.GetAllVariableNames().Count()} variables (after finally) ---");
-                    SolutionVM.UpdateResults(variableStore); // Call update AFTER restoring console
+                    var variableCount = variableStore.GetAllVariableNames().Count();
+                    LogAttribute.LogMessage("About to update SolutionVM with {VariableCount} variables", variableCount);
+
+                    // Log variable names and values for debugging
+                    foreach (var varName in variableStore.GetAllVariableNames())
+                    {
+                        LogAttribute.LogMessage("Variable {VarName} = {Value} {Units} (IsExplicit: {IsExplicit})",
+                            varName,
+                            variableStore.GetVariable(varName),
+                            variableStore.GetUnit(varName),
+                            variableStore.IsExplicitlySet(varName));
+                    }
+
+                    SolutionVM.UpdateResults(variableStore);
+
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        LogAttribute.LogMessage("Running delayed diagnostics after UI update");
+                        LogAttribute.LogMessage("SolutionVM now has {Count} variables", SolutionVM.Variables.Count);
+                        SolutionVM.LogItemProperties();
+                    }, DispatcherPriority.Background);
                 }
                 else
                 {
@@ -543,6 +554,16 @@ namespace LibreSolvE.GUI.ViewModels
                 PlotViewModels.Add(plotVM);
                 StatusText = $"Plot '{title}' displayed.";
             });
+        }
+
+        public void DebugSolutionTab()
+        {
+            // This would be called from MainWindow.axaml.cs after loading
+            LogAttribute.LogMessage("DebugSolutionTab: SolutionVM has {Count} variables",
+                SolutionVM?.Variables?.Count ?? 0);
+
+            // If we have a reference to the DataGrid, we could pass it here:
+            // SolutionVM.DebugDataGridBinding(dataGrid);
         }
     }
 }

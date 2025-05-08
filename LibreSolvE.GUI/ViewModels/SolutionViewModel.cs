@@ -36,18 +36,18 @@ namespace LibreSolvE.GUI.ViewModels
         public void UpdateResults(VariableStore store)
         {
             // Log entry point
-            Debug.WriteLine("[SolutionViewModel.UpdateResults] Method called.");
+            Serilog.Log.Debug("[SolutionViewModel.UpdateResults] Method called.");
 
             if (store == null)
             {
-                Debug.WriteLine("[SolutionViewModel.UpdateResults] Input VariableStore is null. Clearing variables.");
+                Serilog.Log.Debug("[SolutionViewModel.UpdateResults] Input VariableStore is null. Clearing variables.");
                 // Ensure clear happens on UI thread if needed
                 Dispatcher.UIThread.Post(() => Variables.Clear());
                 return;
             }
 
             var varNames = store.GetAllVariableNames().ToList(); // Get names once
-            Debug.WriteLine($"[SolutionViewModel.UpdateResults] Store contains {varNames.Count} variables: {string.Join(", ", varNames)}");
+            Serilog.Log.Debug($"[SolutionViewModel.UpdateResults] Store contains {varNames.Count} variables: {string.Join(", ", varNames)}");
 
             var newItems = new List<VariableResultItem>();
             foreach (var varName in varNames.OrderBy(name => name)) // Order them
@@ -71,36 +71,81 @@ namespace LibreSolvE.GUI.ViewModels
                         Source = source
                     });
                     // Log each item prepared
-                    // Debug.WriteLine($"[SolutionViewModel.UpdateResults] Prepared item: {varName}={value} [{units}] ({source})");
+                    Serilog.Log.Debug($"[SolutionViewModel.UpdateResults] Prepared item: {varName}={value} [{units}] ({source})");
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[SolutionViewModel.UpdateResults] Error getting value/unit for variable {varName}: {ex.Message}");
+                    Serilog.Log.Error($"[SolutionViewModel.UpdateResults] Error getting value/unit for variable {varName}: {ex.Message}");
                     // Optionally add an error item to the list
                     newItems.Add(new VariableResultItem { Name = varName, Units = "Error", Source = ex.Message });
                 }
             }
-            Debug.WriteLine($"[SolutionViewModel.UpdateResults] Prepared temporary list with {newItems.Count} items.");
+            Serilog.Log.Debug($"[SolutionViewModel.UpdateResults] Prepared temporary list with {newItems.Count} items.");
 
             // --- UI Thread Update ---
             Dispatcher.UIThread.Post(() =>
             {
-                Debug.WriteLine($"[SolutionViewModel.UpdateResults] Executing on UI thread. Current Variables count BEFORE Clear: {Variables.Count}");
+                Serilog.Log.Debug($"[SolutionViewModel.UpdateResults] Executing on UI thread. Current Variables count BEFORE Clear: {Variables.Count}");
                 try
                 {
                     Variables.Clear();
-                    Debug.WriteLine($"[SolutionViewModel.UpdateResults] Variables collection cleared on UI thread.");
+                    Serilog.Log.Debug($"[SolutionViewModel.UpdateResults] Variables collection cleared on UI thread.");
                     foreach (var item in newItems)
                     {
                         Variables.Add(item);
                     }
-                    Debug.WriteLine($"[SolutionViewModel.UpdateResults] Finished updating Variables collection on UI thread. New count AFTER Add: {Variables.Count}");
+                    Serilog.Log.Debug($"[SolutionViewModel.UpdateResults] Finished updating Variables collection on UI thread. New count AFTER Add: {Variables.Count}");
                 }
                 catch (Exception uiEx)
                 {
-                    Debug.WriteLine($"[SolutionViewModel.UpdateResults] *** ERROR updating ObservableCollection on UI thread: {uiEx.Message} ***");
+                    Serilog.Log.Error($"[SolutionViewModel.UpdateResults] *** ERROR updating ObservableCollection on UI thread: {uiEx.Message} ***");
                 }
             }, DispatcherPriority.Background);
+        }
+
+        // In SolutionViewModel.cs, add this method to directly inspect the DataGrid's binding
+        public void DebugDataGridBinding(Avalonia.Controls.DataGrid dataGrid)
+        {
+            if (dataGrid == null)
+            {
+                Serilog.Log.Debug("DebugDataGridBinding: DataGrid is null!");
+                return;
+            }
+
+            Serilog.Log.Debug("DataGrid ItemsSource Type: {Type}",
+                dataGrid.ItemsSource?.GetType().Name ?? "null");
+
+            if (dataGrid.ItemsSource is ObservableCollection<VariableResultItem> items)
+            {
+                Serilog.Log.Debug("DataGrid ItemsSource has {Count} items", items.Count);
+                foreach (var item in items)
+                {
+                    Serilog.Log.Debug("DataGrid Item: {Name} = {Value} {Units} ({Source})",
+                        item.Name, item.Value, item.Units, item.Source);
+                }
+            }
+        }
+
+        public void LogItemProperties()
+        {
+            if (Variables.Count > 0)
+            {
+                var item = Variables[0];
+                Serilog.Log.Debug("VariableResultItem Properties:");
+                Serilog.Log.Debug("  Name: '{Name}'", item.Name);
+                Serilog.Log.Debug("  Value: {Value}", item.Value);
+                Serilog.Log.Debug("  Units: '{Units}'", item.Units);
+                Serilog.Log.Debug("  Source: '{Source}'", item.Source);
+
+                // Check for null or empty properties
+                Serilog.Log.Debug("  Name is null or empty: {IsEmpty}", string.IsNullOrEmpty(item.Name));
+                Serilog.Log.Debug("  Units is null or empty: {IsEmpty}", string.IsNullOrEmpty(item.Units));
+                Serilog.Log.Debug("  Source is null or empty: {IsEmpty}", string.IsNullOrEmpty(item.Source));
+            }
+            else
+            {
+                Serilog.Log.Debug("No items in Variables collection to inspect");
+            }
         }
     }
 }

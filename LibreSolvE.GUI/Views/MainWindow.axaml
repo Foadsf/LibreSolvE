@@ -70,21 +70,68 @@
             <!-- Right Panel: Results and Plots (Tabbed or Stacked) -->
             <TabControl Grid.Column="2" Margin="5">
                 <TabItem Header="Solution">
-                    <!-- Remove the Panel, put DataGrid directly as content -->
-                    <DataGrid x:Name="SolutionDataGrid"
-                        ItemsSource="{Binding SolutionVM.Variables}"
-                        Margin="5"
-                        AutoGenerateColumns="False"
-                        IsReadOnly="True">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Variable" Binding="{Binding Name}" Width="*" />
-                            <DataGridTextColumn Header="Value"
-                                Binding="{Binding Value, StringFormat='N6'}" Width="*" />
-                            <DataGridTextColumn Header="Units" Binding="{Binding Units}" Width="*" />
-                            <DataGridTextColumn Header="Source" Binding="{Binding Source}"
-                                Width="Auto" />
-                        </DataGrid.Columns>
-                    </DataGrid>
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top"
+                            Text="{Binding SolutionVM.Variables.Count, StringFormat='Variables found: {0}'}"
+                            Margin="5"
+                            FontWeight="Bold" />
+
+                        <TextBlock DockPanel.Dock="Bottom"
+                            Text="If you're seeing this but no data in the grid, there may be a display issue"
+                            Margin="5"
+                            Foreground="Red" />
+
+                        <!-- Super simple approach with ItemsControl -->
+                        <ScrollViewer>
+                            <StackPanel>
+                                <!-- Header -->
+                                <Grid Background="LightGray" Margin="5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0" Text="Variable" FontWeight="Bold"
+                                        Margin="5" />
+                                    <TextBlock Grid.Column="1" Text="Value" FontWeight="Bold"
+                                        Margin="5" />
+                                    <TextBlock Grid.Column="2" Text="Units" FontWeight="Bold"
+                                        Margin="5" />
+                                    <TextBlock Grid.Column="3" Text="Source" FontWeight="Bold"
+                                        Margin="5" />
+                                </Grid>
+
+                                <!-- Items -->
+                                <ItemsControl ItemsSource="{Binding SolutionVM.Variables}"
+                                    Margin="5">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,2">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <TextBlock Grid.Column="0" Text="{Binding Name}"
+                                                    Margin="5,0" />
+                                                <TextBlock Grid.Column="1"
+                                                    Text="{Binding Value, StringFormat='F6'}"
+                                                    Margin="5,0" />
+                                                <TextBlock Grid.Column="2" Text="{Binding Units}"
+                                                    Margin="5,0" />
+                                                <TextBlock Grid.Column="3" Text="{Binding Source}"
+                                                    Margin="5,0" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </DockPanel>
                 </TabItem>
                 <TabItem Header="Plots">
                     <!-- This will host one or more PlotViews. For simplicity, let's show the first
@@ -114,32 +161,37 @@
                 <!-- TODO: Add tabs for Parametric Table, Lookup Table, Arrays, Residuals, Formatted
                 Equations etc. -->
                 <TabItem Header="Debug Log">
-                    <Panel>
-                        <!-- Optional: Add a clear button -->
-                        <!-- <Button Content="Clear Log" Command="{Binding
-                        DebugLogVM.ClearLogCommand}" DockPanel.Dock="Top"/> -->
+                    <DockPanel>
+                        <!-- Add button panel at the top -->
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8"
+                            Margin="5">
+                            <Button Content="Copy All to Clipboard"
+                                Command="{Binding DebugLogVM.CopyToClipboardCommand}" />
+                            <Button Content="Export to File..."
+                                Command="{Binding DebugLogVM.ExportToFileCommand}" />
+                            <Button Content="Clear Log"
+                                Command="{Binding DebugLogVM.ClearLogCommand}" />
+                        </StackPanel>
+
+                        <!-- Use a TextBox for each log entry -->
                         <ScrollViewer VerticalScrollBarVisibility="Auto"
                             HorizontalScrollBarVisibility="Auto">
                             <ItemsControl ItemsSource="{Binding DebugLogVM.Logs}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding}" FontFamily="Consolas,Monospace"
-                                            FontSize="11" TextWrapping="NoWrap" />
+                                        <TextBox Text="{Binding}"
+                                            IsReadOnly="True"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            TextWrapping="NoWrap"
+                                            FontFamily="Consolas,Monospace"
+                                            FontSize="11"
+                                            Margin="0,1" />
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <!-- Alternative: Use a read-only TextBox -->
-                            <!--
-                            <TextBox Text="{Binding DebugLogVM.FormattedLogText}"
-                                     IsReadOnly="True"
-                                     AcceptsReturn="True"
-                                     TextWrapping="NoWrap"
-                                     ScrollViewer.VerticalScrollBarVisibility="Visible"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Visible"
-                                     FontFamily="Consolas,Monospace"/>
-                            -->
                         </ScrollViewer>
-                    </Panel>
+                    </DockPanel>
                 </TabItem>
             </TabControl>
         </Grid>

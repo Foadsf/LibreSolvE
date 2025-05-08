@@ -12,21 +12,39 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // Fix: This needs to be done after the component is initialized
-        // and we need to ensure the DataContext is set
+        // Make sure DataContext is set correctly
         if (DataContext == null)
         {
             DataContext = new MainWindowViewModel();
         }
 
-        // Pass the window reference to the view model
+        // Pass window reference to view model
         if (DataContext is MainWindowViewModel viewModel)
         {
             viewModel.SetWindow(this);
         }
 
-        // Add Loaded event handler instead of overriding OnLoaded
-        this.Loaded += MainWindow_Loaded;
+        // Add this line for debugging
+        this.Loaded += (s, e) =>
+        {
+            if (DataContext is MainWindowViewModel vm)
+            {
+                vm.DebugSolutionTab();
+
+                // Also try to find the DataGrid directly and check its state
+                var dataGrid = this.FindControl<Avalonia.Controls.DataGrid>("SolutionDataGrid");
+                if (dataGrid != null)
+                {
+                    Serilog.Log.Debug("Found SolutionDataGrid in MainWindow");
+                    Serilog.Log.Debug("DataGrid ItemsSource is {Type}",
+                        dataGrid.ItemsSource?.GetType().Name ?? "null");
+                }
+                else
+                {
+                    Serilog.Log.Debug("Could not find SolutionDataGrid in MainWindow");
+                }
+            }
+        };
     }
 
     private void MainWindow_Loaded(object? sender, RoutedEventArgs e)

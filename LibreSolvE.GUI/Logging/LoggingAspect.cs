@@ -96,5 +96,9 @@ namespace LibreSolvE.GUI.AOP // Or your preferred namespace
             }
             return sb.ToString();
         }
+        public static void LogMessage(string message, params object[] args)
+        {
+            Serilog.Log.Debug(message, args);
+        }
     }
 }
