@@ -107,6 +107,7 @@ public class OdeSolver
         // Also backup dydt_var if it exists, as the sub-solver will modify it
         double originalDydt = _variableStore.HasVariable(_dydtVarName) ? _variableStore.GetVariable(_dydtVarName) : double.NaN;
         bool dydtWasExplicit = _variableStore.IsExplicitlySet(_dydtVarName);
+        bool dydtWasSolved = _variableStore.IsSolvedSet(_dydtVarName);
 
         _variableStore.SetVariable(_independentVarName, tValue);
         _variableStore.SetVariable(_dependentVarName, yValue);
@@ -145,11 +146,11 @@ public class OdeSolver
                 {
                     // For these more complex cases, use the sub-solver approach
                     // Set dydt to unknown (not explicitly set) for the sub-solve
-                    if (dydtWasExplicit)
+                    if (dydtWasExplicit || dydtWasSolved)
                     {
                         _variableStore.SetGuessValue(_dydtVarName, originalDydt);
                         // Need to mark dydt as non-explicit for the solver to include it
-                        if (_variableStore.IsExplicitlySet(_dydtVarName))
+                        if (_variableStore.IsExplicitlySet(_dydtVarName) || _variableStore.IsSolvedSet(_dydtVarName))
                         {
                             // Create a temporary variable store without the dydt explicitly set
                             var tempStore = new VariableStore();
@@ -157,7 +158,18 @@ public class OdeSolver
                             {
                                 if (varName != _dydtVarName)
                                 {
-                                    tempStore.SetVariable(varName, _variableStore.GetVariable(varName));
+                                    if (_variableStore.IsExplicitlySet(varName))
+                                    {
+                                        tempStore.SetVariable(varName, _variableStore.GetVariable(varName));
+                                    }
+                                    else if (_variableStore.IsSolvedSet(varName))
+                                    {
+                                        tempStore.SetSolvedVariable(varName, _variableStore.GetVariable(varName));
+                                    }
+                                    else
+                                    {
+                                        tempStore.SetGuessValue(varName, _variableStore.GetVariable(varName));
+                                    }
                                 }
                                 else
                                 {
@@ -236,10 +248,27 @@ public class OdeSolver
         }
         finally
         {
-            // Restore original values
-            if (!double.IsNaN(originalT)) _variableStore.SetVariable(_independentVarName, originalT);
-            if (!double.IsNaN(originalY)) _variableStore.SetVariable(_dependentVarName, originalY);
-            if (!double.IsNaN(originalDydt) && dydtWasExplicit) _variableStore.SetVariable(_dydtVarName, originalDydt);
+            // Restore original values with appropriate flags
+            if (!double.IsNaN(originalT))
+                _variableStore.SetVariable(_independentVarName, originalT);
+
+            if (!double.IsNaN(originalY))
+            {
+                if (_variableStore.IsSolvedSet(_dependentVarName))
+                    _variableStore.SetSolvedVariable(_dependentVarName, originalY);
+                else
+                    _variableStore.SetVariable(_dependentVarName, originalY);
+            }
+
+            if (!double.IsNaN(originalDydt))
+            {
+                if (dydtWasSolved)
+                    _variableStore.SetSolvedVariable(_dydtVarName, originalDydt);
+                else if (dydtWasExplicit)
+                    _variableStore.SetVariable(_dydtVarName, originalDydt);
+                else
+                    _variableStore.SetGuessValue(_dydtVarName, originalDydt);
+            }
         }
     }
 

@@ -74,7 +74,7 @@ namespace LibreSolvE.GUI.ViewModels
                     {
                         Name = varName,
                         Value = value,
-                        Units = units,
+                        Units = string.IsNullOrEmpty(units) ? "-" : units, // Add a dash for empty units
                         Source = source
                     });
                     Log.Debug($"[SolutionViewModel.UpdateResults] Prepared item: {varName}={value} [{units}] ({source})");

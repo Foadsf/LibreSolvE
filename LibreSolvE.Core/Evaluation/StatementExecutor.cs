@@ -480,14 +480,21 @@ public class StatementExecutor
             );
 
             ConfigureOdeSolver(odeSolver);
-
             double finalY = odeSolver.Solve();
 
             string? originalUnit = _variableStore.HasUnit(dependentVarNode.Name) ? _variableStore.GetUnit(dependentVarNode.Name) : null;
+
+            // For temperature variables, set appropriate units if not already set
+            if (originalUnit == null &&
+                (dependentVarNode.Name.StartsWith("T") && !dependentVarNode.Name.StartsWith("t_")))
+            {
+                originalUnit = "°C"; // Set temperature unit
+            }
+
             _variableStore.SetSolvedVariable(dependentVarNode.Name, finalY); // Sets value, marks as solved
             if (originalUnit != null)
             {
-                _variableStore.SetUnit(dependentVarNode.Name, originalUnit); // Re-apply original unit if it existed
+                _variableStore.SetUnit(dependentVarNode.Name, originalUnit); // Apply/re-apply unit
             }
 
             Console.WriteLine($"ODE for '{dependentVarNode.Name}' solved. Final value: {finalY} at t={upperLimit}");

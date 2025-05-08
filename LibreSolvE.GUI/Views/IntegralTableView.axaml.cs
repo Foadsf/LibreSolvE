@@ -119,23 +119,18 @@ namespace LibreSolvE.GUI.Views
                 return;
             }
 
-            Serilog.Log.Debug("[IntegralTableView] SetupDataGrid: Preparing grid. RowCount={RowCount}, Columns={ColumnCount}", _viewModel.RowCount, _viewModel.ColumnNames.Count);
-
-
-            // Ensure setup happens on UI thread if necessary (though usually called from it)
-            // Dispatcher.UIThread.Post(() => { ... }); // Usually not needed here if called from DCChanged/PropChanged handler
-
-            _dataGrid.Columns.Clear(); // Clear previous columns
+            Serilog.Log.Debug("[IntegralTableView] SetupDataGrid: Preparing grid. RowCount={RowCount}, Columns={ColumnCount}",
+                             _viewModel.RowCount, _viewModel.ColumnNames.Count);
 
             if (_viewModel.ColumnNames.Count == 0 || _viewModel.RowCount == 0)
             {
-                Serilog.Log.Debug("[IntegralTableView] SetupDataGrid: No columns or rows to display. Clearing ItemsSource.");
-                _dataGrid.ItemsSource = null; // Ensure grid is empty
+                Serilog.Log.Debug("[IntegralTableView] SetupDataGrid: No columns or rows to display. Clearing grid.");
+                _dataGrid.ItemsSource = null;
+                _dataGrid.Columns.Clear();
                 return;
             }
 
-
-            // Create data objects for each row - MODIFIED APPROACH
+            // Create data objects for each row
             var rowList = new List<Dictionary<string, object>>();
             for (int i = 0; i < _viewModel.RowCount; i++)
             {
@@ -143,47 +138,61 @@ namespace LibreSolvE.GUI.Views
                 foreach (var colName in _viewModel.ColumnNames)
                 {
                     // Use TryGetValue for safety
-                    rowData[colName] = _viewModel.TableData.TryGetValue(colName, out var values) && i < values.Count
-                                          ? (object)values[i] // Cast to object
-                                          : double.NaN;       // Use NaN or null for missing data
+                    double value = _viewModel.GetValueAt(colName, i);
+                    rowData[colName] = value;
                 }
                 rowList.Add(rowData);
             }
             Serilog.Log.Debug("[IntegralTableView] SetupDataGrid: Created rowList with {Count} items.", rowList.Count);
 
-
-            // Add all columns FIRST before setting ItemsSource
-            foreach (var colName in _viewModel.ColumnNames)
+            // Execute this UI update on the UI thread for safety
+            Dispatcher.UIThread.Post(() =>
             {
-                var column = new DataGridTextColumn
+                try
                 {
-                    Header = colName,
-                    // Binding uses dictionary key access
-                    Binding = new Avalonia.Data.Binding($"[{colName}]")
+                    // Clear all previous columns first
+                    _dataGrid.Columns.Clear();
+
+                    // Add all columns FIRST before setting ItemsSource
+                    foreach (var colName in _viewModel.ColumnNames)
                     {
-                        StringFormat = "{0:F6}" // Format as 6 decimal places
-                    },
-                    Width = DataGridLength.SizeToCells // Adjust width automatically
-                };
-                _dataGrid.Columns.Add(column);
-            }
-            Serilog.Log.Debug("[IntegralTableView] SetupDataGrid: Added {Count} columns to DataGrid.", _dataGrid.Columns.Count);
+                        var column = new DataGridTextColumn
+                        {
+                            Header = colName,
+                            // Binding uses dictionary key access
+                            Binding = new Avalonia.Data.Binding($"[{colName}]")
+                            {
+                                StringFormat = "{0:F6}" // Format as 6 decimal places
+                            },
+                            Width = DataGridLength.SizeToCells // Adjust width automatically
+                        };
+                        _dataGrid.Columns.Add(column);
+                    }
+                    Serilog.Log.Debug("[IntegralTableView] SetupDataGrid: Added {Count} columns to DataGrid.", _dataGrid.Columns.Count);
 
+                    // Now set the ItemsSource AFTER columns are defined
+                    if (rowList.Count > 0)
+                    {
+                        _dataGrid.ItemsSource = null; // Try setting to null first
+                        _dataGrid.ItemsSource = rowList; // Set the source again
 
-            // Now set the ItemsSource AFTER columns are defined
-            if (rowList.Count > 0)
-            {
-                _dataGrid.ItemsSource = null; // Try setting to null first
-                _dataGrid.ItemsSource = rowList; // Set the source again
-                //_dataGrid.InvalidateMeasure(); // Try invalidating measure/visuals
-                //_dataGrid.InvalidateVisual();
-                Serilog.Log.Debug($"[IntegralTableView] SetupDataGrid: Set ItemsSource with {rowList.Count} rows.");
-            }
-            else
-            {
-                Serilog.Log.Debug("IntegralTableView: No rows to display");
-                _dataGrid.ItemsSource = null;
-            }
+                        // Force layout update
+                        _dataGrid.InvalidateMeasure();
+                        _dataGrid.InvalidateVisual();
+
+                        Serilog.Log.Debug($"[IntegralTableView] SetupDataGrid: Set ItemsSource with {rowList.Count} rows.");
+                    }
+                    else
+                    {
+                        Serilog.Log.Debug("IntegralTableView: No rows to display");
+                        _dataGrid.ItemsSource = null;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Serilog.Log.Error(ex, "[IntegralTableView] Error setting up DataGrid in UI thread");
+                }
+            });
         }
     }
 }
