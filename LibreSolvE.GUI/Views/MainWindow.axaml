@@ -72,7 +72,7 @@
                 HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
 
             <!-- Right Panel: Results and Plots (Tabbed or Stacked) -->
-            <TabControl Grid.Column="2" Margin="5">
+            <TabControl Grid.Column="2" Margin="5" SelectionChanged="TabControl_SelectionChanged">
                 <TabItem Header="Solution">
                     <DockPanel>
                         <TextBlock DockPanel.Dock="Top"
@@ -174,7 +174,12 @@
                 <!-- TODO: Add tabs for Parametric Table, Lookup Table, Arrays, Residuals, Formatted
                 Equations etc. -->
                 <TabItem Header="Integral Table">
-                    <views:IntegralTableView DataContext="{Binding IntegralTableVM}" />
+                    <DockPanel LastChildFill="True">
+                        <views:IntegralTableView
+                            Height="550"
+                            DataContext="{Binding IntegralTableVM}"
+                            Margin="5" />
+                    </DockPanel>
                 </TabItem>
                 <TabItem Header="Debug Log">
                     <DockPanel>

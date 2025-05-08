@@ -446,7 +446,17 @@ namespace LibreSolvE.GUI.ViewModels
                         if (integralTable != null && integralTable.Count > 0 && integralTable.Values.Any(v => v.Count > 0))
                         {
                             LogAttribute.LogMessage("Updating IntegralTableVM with data from executor");
-                            IntegralTableVM.UpdateFromIntegralTable(integralTable);
+
+                            // Instead of replacing the entire view model, update the data in the existing one
+                            if (IntegralTableVM != null)
+                            {
+                                IntegralTableVM.UpdateFromIntegralTable(integralTable);
+                            }
+                            else
+                            {
+                                IntegralTableVM = new IntegralTableViewModel();
+                                IntegralTableVM.UpdateFromIntegralTable(integralTable);
+                            }
                         }
                         else
                         {
@@ -586,5 +596,6 @@ namespace LibreSolvE.GUI.ViewModels
             // If we have a reference to the DataGrid, we could pass it here:
             // SolutionVM.DebugDataGridBinding(dataGrid);
         }
+
     }
 }

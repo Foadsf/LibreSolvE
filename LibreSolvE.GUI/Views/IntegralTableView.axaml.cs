@@ -6,6 +6,8 @@ using LibreSolvE.GUI.ViewModels;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
+using System.Collections.ObjectModel; // Add this for ObservableCollection
 
 namespace LibreSolvE.GUI.Views
 {
@@ -60,15 +62,8 @@ namespace LibreSolvE.GUI.Views
             }
             else
             {
-                Serilog.Log.Debug("[IntegralTableView] DataContext is NOT IntegralTableViewModel (Type: {Type}). Clearing grid.",
+                Serilog.Log.Debug("[IntegralTableView] DataContext is NOT IntegralTableViewModel (Type: {Type}). Preserving grid.",
                     DataContext?.GetType()?.Name ?? "null");
-
-                // Clear the DataGrid if the DataContext is not our expected type
-                if (_dataGrid != null)
-                {
-                    _dataGrid.ItemsSource = null;
-                    _dataGrid.Columns.Clear();
-                }
             }
         }
 
@@ -102,6 +97,7 @@ namespace LibreSolvE.GUI.Views
                 // Update on UI thread
                 Dispatcher.UIThread.Post(() => SetupDataGrid());
             }
+            DisplayDataManually();
         }
 
         private void SetupDataGrid()
@@ -130,21 +126,6 @@ namespace LibreSolvE.GUI.Views
                 return;
             }
 
-            // Create data objects for each row
-            var rowList = new List<Dictionary<string, object>>();
-            for (int i = 0; i < _viewModel.RowCount; i++)
-            {
-                var rowData = new Dictionary<string, object>();
-                foreach (var colName in _viewModel.ColumnNames)
-                {
-                    // Use TryGetValue for safety
-                    double value = _viewModel.GetValueAt(colName, i);
-                    rowData[colName] = value;
-                }
-                rowList.Add(rowData);
-            }
-            Serilog.Log.Debug("[IntegralTableView] SetupDataGrid: Created rowList with {Count} items.", rowList.Count);
-
             // Execute this UI update on the UI thread for safety
             Dispatcher.UIThread.Post(() =>
             {
@@ -153,46 +134,168 @@ namespace LibreSolvE.GUI.Views
                     // Clear all previous columns first
                     _dataGrid.Columns.Clear();
 
-                    // Add all columns FIRST before setting ItemsSource
+                    // Temporarily set ItemsSource to null to avoid binding issues during column setup
+                    _dataGrid.ItemsSource = null;
+
+                    // Create columns with specified properties
                     foreach (var colName in _viewModel.ColumnNames)
                     {
                         var column = new DataGridTextColumn
                         {
                             Header = colName,
+                            Width = DataGridLength.Auto, // Use auto sizing
+                            MinWidth = 80,
                             // Binding uses dictionary key access
                             Binding = new Avalonia.Data.Binding($"[{colName}]")
                             {
-                                StringFormat = "{0:F6}" // Format as 6 decimal places
-                            },
-                            Width = DataGridLength.SizeToCells // Adjust width automatically
+                                StringFormat = "{0:F4}" // Format as 4 decimal places
+                            }
                         };
                         _dataGrid.Columns.Add(column);
                     }
                     Serilog.Log.Debug("[IntegralTableView] SetupDataGrid: Added {Count} columns to DataGrid.", _dataGrid.Columns.Count);
 
-                    // Now set the ItemsSource AFTER columns are defined
-                    if (rowList.Count > 0)
+                    // Set the ItemsSource AFTER all columns are defined
+                    if (_viewModel.TableItems != null && _viewModel.TableItems.Count > 0)
                     {
-                        _dataGrid.ItemsSource = null; // Try setting to null first
-                        _dataGrid.ItemsSource = rowList; // Set the source again
+                        // Make a copy to prevent modification issues
+                        var items = new ObservableCollection<Dictionary<string, object>>();
+                        foreach (var item in _viewModel.TableItems)
+                        {
+                            items.Add(new Dictionary<string, object>(item));
+                        }
 
-                        // Force layout update
-                        _dataGrid.InvalidateMeasure();
-                        _dataGrid.InvalidateVisual();
+                        _dataGrid.ItemsSource = items;
 
-                        Serilog.Log.Debug($"[IntegralTableView] SetupDataGrid: Set ItemsSource with {rowList.Count} rows.");
+                        // Log first row to verify data
+                        if (items.Count > 0)
+                        {
+                            var firstItem = items[0];
+                            Serilog.Log.Debug("[IntegralTableView] First row data: {First}",
+                                string.Join(", ", firstItem.Select(kv => $"{kv.Key}={kv.Value}")));
+                        }
+
+                        Serilog.Log.Debug($"[IntegralTableView] SetupDataGrid: Set ItemsSource with {items.Count} rows from TableItems property.");
                     }
                     else
                     {
-                        Serilog.Log.Debug("IntegralTableView: No rows to display");
-                        _dataGrid.ItemsSource = null;
+                        Serilog.Log.Debug("IntegralTableView: No TableItems rows to display");
                     }
+
+                    // Force visual update
+                    _dataGrid.InvalidateVisual();
+                    _dataGrid.InvalidateMeasure();
+                    _dataGrid.UpdateLayout();
                 }
                 catch (Exception ex)
                 {
                     Serilog.Log.Error(ex, "[IntegralTableView] Error setting up DataGrid in UI thread");
                 }
             });
+
+            DisplayDataManually();
+        }
+
+        // Public method for MainWindow to call
+        public void ForceRefreshGrid()
+        {
+            SetupDataGrid();
+        }
+
+        public void CheckGridVisibility()
+        {
+            Serilog.Log.Debug("[IntegralTableView] Grid visibility check:");
+
+            if (_dataGrid != null)
+            {
+                Serilog.Log.Debug("  DataGrid exists, IsVisible={IsVisible}, Opacity={Opacity}, " +
+                    "Width={Width}, Height={Height}, ItemsSource={HasItems}",
+                    _dataGrid.IsVisible,
+                    _dataGrid.Opacity,
+                    _dataGrid.Width,
+                    _dataGrid.Height,
+                    _dataGrid.ItemsSource != null);
+
+                if (_dataGrid.ItemsSource != null)
+                {
+                    // Try to get count from different collection types
+                    int count = 0;
+                    if (_dataGrid.ItemsSource is System.Collections.ICollection collection)
+                    {
+                        count = collection.Count;
+                    }
+                    else if (_dataGrid.ItemsSource is System.Collections.IEnumerable enumerable)
+                    {
+                        count = enumerable.Cast<object>().Count();
+                    }
+
+                    Serilog.Log.Debug("  ItemsSource has approximately {Count} items", count);
+                }
+
+                Serilog.Log.Debug("  Columns: {Count}", _dataGrid.Columns?.Count ?? 0);
+            }
+            else
+            {
+                Serilog.Log.Debug("  DataGrid is null");
+            }
+
+            Serilog.Log.Debug("  UserControl.IsVisible={IsVisible}, Opacity={Opacity}, " +
+                "Width={Width}, Height={Height}",
+                this.IsVisible,
+                this.Opacity,
+                this.Width,
+                this.Height);
+        }
+
+        public void DisplayDataManually()
+        {
+            var textBlock = this.FindControl<TextBlock>("ManualDataText");
+            if (textBlock == null)
+            {
+                Serilog.Log.Debug("[IntegralTableView] ManualDataText TextBlock not found");
+                return;
+            }
+
+            if (_viewModel == null || _viewModel.RowCount == 0 || _viewModel.ColumnNames.Count == 0)
+            {
+                textBlock.Text = "No data available";
+                return;
+            }
+
+            StringBuilder text = new StringBuilder();
+            text.AppendLine($"Manual data display (first 20 rows):");
+
+            // Add header
+            text.Append("Row | ");
+            foreach (var column in _viewModel.ColumnNames)
+            {
+                text.Append($"{column} | ");
+            }
+            text.AppendLine();
+
+            // Add separator
+            text.Append("-----|");
+            foreach (var _ in _viewModel.ColumnNames)
+            {
+                text.Append("------|");
+            }
+            text.AppendLine();
+
+            // Add data rows (limit to 20)
+            int rowsToShow = Math.Min(_viewModel.RowCount, 20);
+            for (int i = 0; i < rowsToShow; i++)
+            {
+                text.Append($"{i + 1,4} | ");
+                foreach (var column in _viewModel.ColumnNames)
+                {
+                    double value = _viewModel.GetValueAt(column, i);
+                    text.Append($"{value,6:F3} | ");
+                }
+                text.AppendLine();
+            }
+
+            textBlock.Text = text.ToString();
+            Serilog.Log.Debug("[IntegralTableView] Manual data display updated with {Count} rows", rowsToShow);
         }
     }
 }

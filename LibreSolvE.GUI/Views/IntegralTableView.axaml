@@ -7,19 +7,32 @@
     mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
     x:Class="LibreSolvE.GUI.Views.IntegralTableView">
 
-    <DockPanel>
+    <DockPanel LastChildFill="True" Background="White">
+        <!-- Header -->
         <TextBlock DockPanel.Dock="Top"
             Text="{Binding RowCount, StringFormat='Integral Table: {0} rows'}"
             Margin="5"
-            FontWeight="Bold" />
+            FontWeight="Bold"
+            FontSize="14" />
 
-        <!-- DataGrid MUST have the correct Name -->
+        <!-- Footer - Manual display -->
+        <Border DockPanel.Dock="Bottom" BorderThickness="1" BorderBrush="Gray" Margin="5">
+            <ScrollViewer MaxHeight="150">
+                <TextBlock Name="ManualDataText" TextWrapping="Wrap" Margin="5" />
+            </ScrollViewer>
+        </Border>
+
+        <!-- Main content - DataGrid (will fill remaining space) -->
         <DataGrid Name="IntegralTableGrid"
             AutoGenerateColumns="False"
             IsReadOnly="True"
+            ItemsSource="{Binding TableItems}"
             VerticalScrollBarVisibility="Auto"
             HorizontalScrollBarVisibility="Auto"
+            GridLinesVisibility="All"
+            BorderThickness="1"
+            BorderBrush="Gray"
+            MinHeight="300"
             Margin="5" />
-        <!-- ItemsSource is set in code-behind -->
     </DockPanel>
 </UserControl>
