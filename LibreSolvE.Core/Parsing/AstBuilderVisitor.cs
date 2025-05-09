@@ -108,23 +108,30 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
 
     /// <summary>
     /// Visits the 'ExplicitAssignment' rule context (using ':=').
-    /// For compatibility, converts to a regular assignment node but with a warning.
+    /// In the main program block, this is a syntax error according to EES.
+    /// Throws a ParsingException.
     /// </summary>
     public override AstNode VisitExplicitAssignment([NotNull] EesParser.ExplicitAssignmentContext context)
     {
-        // Extract the variable name from the token
+        // Grammar rule: assignment: variable=ID ASSIGN rhs=expression SEMI?   # ExplicitAssignment
+        // EES reserves ':=' for assignments within FUNCTIONS and PROCEDURES.
+        // In the main program block (which this parser pass handles), this is a syntax error.
+
+        IToken assignToken = context.ASSIGN().Symbol;
+        IToken variableToken = context.variable;
+
+        IToken errorReferenceToken = assignToken ?? variableToken ?? context.Start;
+
+        int line = errorReferenceToken.Line;
+        int charPositionInLine = errorReferenceToken.Column;
         string varName = context.variable.Text;
-        VariableNode variableNode = new VariableNode(varName);
 
-        // Visit the right-hand side expression
-        ExpressionNode rhs = (ExpressionNode)Visit(context.rhs);
+        string errorMessage = $"Error at Line {line}:{charPositionInLine} near '{varName} := ...': " +
+                              "Syntax error. The colon (from explicit assignment ':=') is reserved. " +
+                              "In the main program, use '=' for assignments and equations. " +
+                              "':=' is used for assignments within FUNCTIONS and PROCEDURES.";
 
-        // Output a warning about := usage being limited in future versions
-        Console.WriteLine($"Warning: The explicit assignment operator ':=' for '{varName}' is reserved in EES." +
-                        " It will be treated as a regular assignment, but future versions may limit its use to functions and procedures.");
-
-        // Return a normal AssignmentNode
-        return new AssignmentNode(variableNode, rhs);
+        throw new ParsingException(errorMessage); // THIS IS THE KEY CHANGE TO REINTRODUCE THE ERROR
     }
 
     /// <summary>

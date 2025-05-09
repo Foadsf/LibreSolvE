@@ -1,108 +1,98 @@
+// In LibreSolvE.CLI/Logging/LoggingHelper.cs
 using Serilog;
 using Serilog.Events;
+using Spectre.Console;  // Add this import for AnsiConsole
 using System;
 using System.IO;
-using System.Reflection;
+using System.Reflection; // Required for Assembly to get version
 
 namespace LibreSolvE.CLI.Logging
 {
-    /// <summary>
-    /// Helper class for configuring and managing Serilog logging for the CLI application
-    /// </summary>
     public static class LoggingHelper
     {
-        /// <summary>
-        /// Configures the Serilog logger for the CLI application
-        /// </summary>
-        public static void ConfigureSerilog(string[] args, out string cliLogDirectory, out string cliGeneralSerilogPath)
+        public static void ConfigureSerilog(string[] args, out string determinedCliLogDirectory, out string determinedCliGeneralSerilogPath)
         {
-            // Set up log directory
+            // Determine base path for logs (e.g., next to executable or in a project 'logs' folder)
             try
             {
-                string currentDir = AppDomain.CurrentDomain.BaseDirectory;
+                // Try to find project root to place logs folder at the solution level
+                string currentDir = AppDomain.CurrentDomain.BaseDirectory; // Typically ...\bin\Debug\netX.Y
+                // Navigate up to find solution root (heuristic, adjust if your folder structure is different)
+                // Assuming CLI project is like SolvE/LibreSolvE.CLI, so up 3 levels to SolvE/, then logs/
                 string projectRootPath = Path.GetFullPath(Path.Combine(currentDir, "..", "..", ".."));
-                cliLogDirectory = Path.Combine(projectRootPath, "logs");
-                Directory.CreateDirectory(cliLogDirectory);
+                determinedCliLogDirectory = Path.Combine(projectRootPath, "logs");
+                Directory.CreateDirectory(determinedCliLogDirectory); // Ensure solution-level logs dir exists
             }
-            catch
+            catch (Exception ex) // Fallback if navigating up fails (e.g. deployed scenario)
             {
-                cliLogDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cli_runtime_logs");
-                Directory.CreateDirectory(cliLogDirectory);
+                Console.WriteLine($"Warning: Could not determine project root for logs. Falling back. Error: {ex.Message}");
+                determinedCliLogDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cli_runtime_logs");
+                Directory.CreateDirectory(determinedCliLogDirectory); // Ensure local logs dir exists
             }
-            cliGeneralSerilogPath = Path.Combine(cliLogDirectory, "cli_serilog_runtime_.log");
+            determinedCliGeneralSerilogPath = Path.Combine(determinedCliLogDirectory, "cli_serilog_runtime_.log");
 
-            // Basic logger configuration
-            var loggerConfigBase = new LoggerConfiguration()
-                .MinimumLevel.Debug()
-                .Enrich.FromLogContext();
+            // Base logger configuration
+            var loggerConfiguration = new LoggerConfiguration()
+                .MinimumLevel.Debug() // Log everything from Debug level up
+                .Enrich.FromLogContext()
+                .Enrich.WithProcessId()
+                .Enrich.WithThreadId();
+            // Add other enrichers if needed, e.g., EnvironmentUserName
+            // .Enrich.WithEnvironmentUserName();
 
-            // Add thread ID enricher if the package is available
-            try
-            {
-                // Try to load the enricher but don't fail if not available
-                var threadType = Type.GetType("Serilog.Enrichers.ThreadIdEnricher, Serilog.Enrichers.Thread");
-                if (threadType != null)
-                {
-                    // The package is available, use it
-                    loggerConfigBase = loggerConfigBase.Enrich.With(Activator.CreateInstance(threadType) as Serilog.Core.ILogEventEnricher);
-                }
-            }
-            catch
-            {
-                // Just continue without this enricher
-            }
 
-            // Add file sink
-            loggerConfigBase = loggerConfigBase.WriteTo.File(
-                cliGeneralSerilogPath,
-                rollingInterval: RollingInterval.Day,
-                retainedFileCountLimit: 7,
-                outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}",
-                restrictedToMinimumLevel: LogEventLevel.Debug);
+            // Add File Sink - always logs Debug level and above
+            loggerConfiguration.WriteTo.File(determinedCliGeneralSerilogPath,
+                          rollingInterval: RollingInterval.Day, // New log file each day
+                          retainedFileCountLimit: 7,            // Keep logs for 7 days
+                          outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}",
+                          restrictedToMinimumLevel: LogEventLevel.Debug);
 
-            // Add console sink
-            loggerConfigBase = loggerConfigBase.WriteTo.Console(
-                outputTemplate: "{Timestamp:HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}",
-                restrictedToMinimumLevel: LogEventLevel.Information);
+            // Console Sink - its minimum level will be set later based on --quiet and --verbose flags
+            // For now, we create the logger with just the file sink.
+            // The console sink will be added in UpdateLoggerForConsoleVerbosity.
+            Log.Logger = loggerConfiguration.CreateLogger();
 
-            // Create the logger
-            Log.Logger = loggerConfigBase.CreateLogger();
-
-            // Set up global unhandled exception handler
+            // Set up global unhandled exception handler to log fatal errors
             AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
             {
-                Log.Fatal(e.ExceptionObject as Exception, "Unhandled CLI exception occurred.");
+                Log.Fatal(e.ExceptionObject as Exception, "Unhandled CLI exception occurred. Application will terminate.");
+                Log.CloseAndFlush(); // Attempt to flush logs before crashing
             };
 
-            // Log startup information
-            Log.Information("LibreSolvE CLI Application Started. Args: {Args}", string.Join(" ", args));
+            string version = Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "dev";
+            Log.Information("LibreSolvE CLI v{Version} Serilog Initialized. Runtime Log: {LogPath}. Args: {Args}",
+                version,
+                determinedCliGeneralSerilogPath,
+                string.Join(" ", args));
         }
 
-        /// <summary>
-        /// Updates the logger configuration with console verbosity settings
-        /// </summary>
+        // UpdateLoggerForConsoleVerbosity and VerifyLogging methods remain the same as before
         public static void UpdateLoggerForConsoleVerbosity(
-            string cliGeneralSerilogPath,
+            string cliGeneralSerilogPath, // Path to the main file log
             bool quiet,
             bool verboseConsole)
         {
-            // Create a new logger configuration
+            // Start with the base configuration (enrichers, etc.)
             var finalLoggerConfig = new LoggerConfiguration()
-                .MinimumLevel.Debug()
-                .Enrich.FromLogContext();
+                .MinimumLevel.Debug() // Set base minimum, sinks will filter
+                .Enrich.FromLogContext()
+                .Enrich.WithProcessId()
+                .Enrich.WithThreadId();
 
-            // Add file sink
-            finalLoggerConfig = finalLoggerConfig.WriteTo.File(
+            // Always add the file sink for Debug level and above
+            finalLoggerConfig.WriteTo.File(
                 cliGeneralSerilogPath,
                 rollingInterval: RollingInterval.Day,
-                outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}",
+                retainedFileCountLimit: 7,
+                outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}",
                 restrictedToMinimumLevel: LogEventLevel.Debug);
 
             // Add console sink based on quiet/verbose settings
             if (!quiet)
             {
-                finalLoggerConfig = finalLoggerConfig.WriteTo.Console(
-                    outputTemplate: "{Timestamp:HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}",
+                finalLoggerConfig.WriteTo.Console(
+                    outputTemplate: "{Timestamp:HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}", // Simpler template for console
                     restrictedToMinimumLevel: verboseConsole ? LogEventLevel.Debug : LogEventLevel.Information);
             }
 
@@ -110,54 +100,65 @@ namespace LibreSolvE.CLI.Logging
             Log.Logger = finalLoggerConfig.CreateLogger();
 
             // Log level info
-            if (verboseConsole && !quiet) Log.Debug("Console logging set to Debug level");
-            else if (!quiet) Log.Debug("Console logging set to Information level");
+            if (verboseConsole && !quiet) Log.Debug("Console logging reconfigured to Debug level.");
+            else if (!quiet) Log.Debug("Console logging reconfigured to Information level.");
+            else Log.Debug("Console logging is off (quiet mode).");
         }
 
-        /// <summary>
-        /// Checks if logs are being properly generated and writes test log entries
-        /// </summary>
-        public static void VerifyLogging(string logDirectory)
+        public static void VerifyLogging(string logDirectory) // logDirectory here is the one determined for Serilog files
         {
+            Log.Information("--- Starting Log Verification ---");
             try
             {
-                // Check if the log directory exists
                 if (!Directory.Exists(logDirectory))
                 {
-                    Console.WriteLine($"WARNING: Log directory does not exist: {logDirectory}");
+                    Log.Warning("Log directory for Serilog does not exist: {LogDirectoryPath}", logDirectory);
                     try
                     {
                         Directory.CreateDirectory(logDirectory);
-                        Console.WriteLine($"Created log directory: {logDirectory}");
+                        Log.Information("Created Serilog log directory: {LogDirectoryPath}", logDirectory);
                     }
                     catch (Exception dirEx)
                     {
-                        Console.WriteLine($"FAILED to create log directory: {dirEx.Message}");
+                        Log.Error(dirEx, "FAILED to create Serilog log directory: {LogDirectoryPath}", logDirectory);
+                        AnsiConsole.MarkupLine($"[red]CLI: FAILED to create Serilog log directory: {logDirectory}[/]");
+                        return; // Cannot proceed with file test if dir creation failed
                     }
                 }
 
-                // Check if we can write a test log file
-                string testLogPath = Path.Combine(logDirectory, "log_test.txt");
+                string testLogPath = Path.Combine(logDirectory, "serilog_startup_test.txt");
                 try
                 {
-                    File.WriteAllText(testLogPath, $"Test log created at {DateTime.Now}");
-                    Console.WriteLine($"Successfully wrote test log to: {testLogPath}");
+                    File.WriteAllText(testLogPath, $"Serilog startup test log entry created at {DateTime.Now}");
+                    Log.Information("Successfully wrote a startup test log file to: {TestLogFilePath}", testLogPath);
                 }
                 catch (Exception fileEx)
                 {
-                    Console.WriteLine($"FAILED to write test log file: {fileEx.Message}");
+                    Log.Error(fileEx, "FAILED to write startup test log file to: {TestLogFilePath}", testLogPath);
+                    AnsiConsole.MarkupLine($"[red]CLI: FAILED to write startup test log to: {testLogPath}[/]");
                 }
 
-                // Try to write to Serilog
-                Log.Information("Serilog verification test message");
-                Log.Debug("Serilog debug test message");
+                Log.Debug("Serilog: This is a Debug test message for verification.");
+                Log.Information("Serilog: This is an Information test message for verification.");
+                Log.Warning("Serilog: This is a Warning test message for verification.");
+                // Log.Error("Serilog: This is an Error test message for verification."); // Uncomment to test error logging
 
-                Console.WriteLine($"Attempted to write Serilog messages. Check {logDirectory} for log files.");
+                // Check the configured cliGeneralSerilogPath (static field in Program.cs)
+                if (!string.IsNullOrEmpty(Program._cliGeneralSerilogFilePath) && File.Exists(Program._cliGeneralSerilogFilePath))
+                {
+                    Log.Information("Serilog messages should be appearing in the main CLI runtime log: {MainCliLogPath}", Program._cliGeneralSerilogFilePath);
+                }
+                else
+                {
+                    Log.Warning("Main CLI runtime log path not found or not yet created: {MainCliLogPath}", Program._cliGeneralSerilogFilePath);
+                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error during log verification: {ex.Message}");
+                Log.Error(ex, "Error during Serilog verification process.");
+                AnsiConsole.MarkupLine($"[red]CLI: Error during Serilog verification: {ex.Message}[/]");
             }
+            Log.Information("--- Finished Log Verification ---");
         }
     }
 }

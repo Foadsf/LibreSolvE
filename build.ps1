@@ -101,7 +101,7 @@ function Clean-Solution {
     Log-Output "Solution cleaned successfully" -Type SUCCESS
 }
 
-# Build solution (remains the same, uses Log-Output)
+# Build solution
 function Build-Solution {
     Log-Output "Building Solution" -Type HEADER
     $BuildVerbosityArg = if ($VerboseScript) { "--verbosity detailed" } else { "" }
@@ -109,6 +109,7 @@ function Build-Solution {
         $BuildOutput = $(dotnet build --nologo $BuildVerbosityArg 2>&1)
         $BuildExitCode = $LASTEXITCODE
         $ErrorCount = 0; $WarningCount = 0; $Errors = @(); $Warnings = @()
+
         $BuildOutput | ForEach-Object {
             $Line = $_
             if ($Line -match ": error " -or $Line -match "error AVLN[0-9]+:") {
@@ -117,14 +118,25 @@ function Build-Solution {
             elseif ($Line -match ": warning ") {
                 if ($Warnings -notcontains $Line) { Log-Output $Line -Type WARNING; $Warnings += $Line; $WarningCount++ }
             }
-            elseif ($VerboseScript) { Log-Output $Line }
+            elseif ($VerboseScript) { Log-Output $Line } # Only log non-error/warning lines if VerboseScript
         }
+
         if ($BuildExitCode -eq 0 -and $ErrorCount -eq 0) {
-            Log-Output "Build completed successfully" -Type SUCCESS; return $true
+            if ($WarningCount -gt 0) {
+                Log-Output "Build completed successfully with $WarningCount warning(s)." -Type WARNING # Report warnings
+            }
+            else {
+                Log-Output "Build completed successfully" -Type SUCCESS
+            }
+            return $true
         }
         else {
-            if ($ErrorCount -gt 0) { Log-Output "Build failed with $ErrorCount error(s) and $WarningCount warning(s)" -Type ERROR }
-            else { Log-Output "Build failed (exit code $BuildExitCode)" -Type ERROR }
+            if ($ErrorCount -gt 0) {
+                Log-Output "Build failed with $ErrorCount error(s) and $WarningCount warning(s)" -Type ERROR
+            }
+            else {
+                Log-Output "Build failed (exit code $BuildExitCode) with $WarningCount warning(s)" -Type ERROR
+            }
             return $false
         }
     }
