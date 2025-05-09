@@ -161,11 +161,13 @@
                 </TabItem>
 
                 <TabItem Header="Integral Table">
-                    <DockPanel LastChildFill="True">
-                        <views:IntegralTableView Height="550"
-                            DataContext="{Binding IntegralTableVM}"
-                            Margin="5" />
-                    </DockPanel>
+                    <!-- Place IntegralTableView DIRECTLY as content -->
+                    <!-- ADD Height and VerticalAlignment -->
+                    <views:IntegralTableView
+                        DataContext="{Binding IntegralTableVM}"
+                        Margin="5"
+                        VerticalAlignment="Stretch"
+                        Height="600" /> <!-- Or another reasonable fixed height -->
                 </TabItem>
 
                 <TabItem Header="Debug Log">

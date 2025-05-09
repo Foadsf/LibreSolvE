@@ -35,7 +35,7 @@ public class EquationSolver
         _functionRegistry = functionRegistry ?? throw new ArgumentNullException(nameof(functionRegistry));
         _equations = equations ?? throw new ArgumentNullException(nameof(equations));
         _solverSettings = settings ?? new SolverSettings();
-        _evaluator = new ExpressionEvaluatorVisitor(_variableStore, _functionRegistry, true); // Treat warnings as errors during solve
+        _evaluator = new ExpressionEvaluatorVisitor(_variableStore, _functionRegistry, null, true); // Treat warnings as errors during solve
 
         IdentifyVariablesToSolve();
     }

@@ -2,15 +2,15 @@
 " This file should parse and execute assignments "
 " without invoking the solver. "
 
-Length := 10.5
-Width := 5.2
-Height := 2.0
+Length = 10.5
+Width = 5.2
+Height = 2.0
 
-Area := Length * Width
-Volume := Area * Height
+Area = Length * Width
+Volume = Area * Height
 
 // Check order dependency (should work)
-Perimeter := 2 * (Length + Width)
+Perimeter = 2 * (Length + Width)
 
 // Simple constant
-Factor := 2.718
+Factor = 2.718

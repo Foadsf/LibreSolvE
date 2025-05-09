@@ -94,3 +94,15 @@ plot_*.svg
 
 
 examples/*.out.txt
+
+# Ignore generated output files in examples directory
+examples/*.log
+examples/*.md
+examples/*.svg
+
+# Ignore log directories
+logs/
+**/logs/
+
+# Ignore Fody generated files
+**/FodyWeavers.xsd

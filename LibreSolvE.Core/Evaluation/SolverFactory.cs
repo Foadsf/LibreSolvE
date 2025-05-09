@@ -36,7 +36,7 @@ public class SolverFactory
         _variablesToSolve = variablesToSolve ?? throw new ArgumentNullException(nameof(variablesToSolve));
         _settings = settings ?? new SolverSettings();
 
-        _evaluator = new ExpressionEvaluatorVisitor(_variableStore, _functionRegistry, true);
+        _evaluator = new ExpressionEvaluatorVisitor(_variableStore, _functionRegistry, null, true);
     }
 
     /// <summary>

@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using System.ComponentModel;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System;
 
 namespace LibreSolvE.GUI.ViewModels
 {
@@ -79,16 +80,21 @@ namespace LibreSolvE.GUI.ViewModels
 
             // If there's no data, exit early
             if (RowCount == 0 || ColumnNames.Count == 0)
+            {
+                Serilog.Log.Debug("[IntegralTableVM] UpdateTableItems: No rows or columns, clearing TableItems.");
                 return;
+            }
 
+            Serilog.Log.Debug("[IntegralTableVM] UpdateTableItems: Creating {RowCount} item dictionaries for TableItems.", RowCount);
             // Create a row dictionary for each row of data
             for (int i = 0; i < RowCount; i++)
             {
-                var rowData = new Dictionary<string, object>();
+                var rowData = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase); // Use case-insensitive dictionary just in case
                 foreach (var colName in ColumnNames)
                 {
                     // Get the value for this column at this row, or a placeholder if out of range
-                    double value = GetValueAt(colName, i);
+                    double value = GetValueAt(colName, i); // GetValueAt uses case-insensitive TableData lookup
+                    // *** Ensure the key added here EXACTLY matches the colName used in DataGrid Binding ***
                     rowData[colName] = value;
                 }
                 TableItems.Add(rowData);
@@ -99,10 +105,12 @@ namespace LibreSolvE.GUI.ViewModels
 
         public double GetValueAt(string columnName, int rowIndex)
         {
-            if (TableData.TryGetValue(columnName, out var values) && rowIndex < values.Count)
+            // TableData dictionary already uses OrdinalIgnoreCase comparer
+            if (TableData.TryGetValue(columnName, out var values) && rowIndex >= 0 && rowIndex < values.Count)
             {
                 return values[rowIndex];
             }
+            Serilog.Log.Warning("[IntegralTableVM] GetValueAt: Could not find value for column '{ColumnName}' at row {RowIndex}. Returning NaN.", columnName, rowIndex);
             return double.NaN;
         }
     }

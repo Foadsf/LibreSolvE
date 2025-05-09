@@ -64,7 +64,7 @@ public class OdeSolver
         // Create an evaluator instance specifically for the ODE solver's internal use if needed,
         // or ensure the passed generalEvaluator is suitable. For solving algebraic sub-systems,
         // we'll need a full EquationSolver instance.
-        _evaluator = new ExpressionEvaluatorVisitor(_variableStore, _functionRegistry, true); // true for warningsAsErrors in sub-solve
+        _evaluator = new ExpressionEvaluatorVisitor(_variableStore, _functionRegistry, null, true); // true for warningsAsErrors in sub-solve
 
     }
 

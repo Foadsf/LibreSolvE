@@ -8,9 +8,15 @@ CP = 4.18 "[kJ/kg-K]" // Specific heat of water
 m_dot = 2 "[kg/s]" // Mass flow rate
 Q_dot = 200 "[kW]" // Heat transfer rate
 
-{ Equations to solve - no assignments for T_hot or DeltaT }
+{ Equations to solve - T_hot and DeltaT are the unknowns }
 T_hot = T_cold + DeltaT * Eff
 DeltaT = Q_dot / m_dot / CP
 
-{ Redundant equation as a check - should be solved simultaneously }
-DeltaT = (T_hot - T_cold) / Eff
+{ This equation is redundant if the system is consistent and Eff is not zero.
+  Commenting it out to make the system determined (2 equations, 2 unknowns).
+  EES would consider the 5 constant definitions + these 2 equations = 7 equations,
+  and 7 variables (T_cold, Eff, CP, m_dot, Q_dot, T_hot, DeltaT), which is determined.
+  LSE will process the 5 constant assignments first, then solve the 2 algebraic equations
+  for the 2 unknowns (T_hot, DeltaT).
+}
+// DeltaT = (T_hot - T_cold) / Eff

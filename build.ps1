@@ -3,10 +3,11 @@
 
 # Parameters
 param (
-    [switch]$Verbose = $false,
+    [switch]$VerboseScript = $false, # Verbosity for this script's actions
     [switch]$Continue = $false,
     [switch]$NoTests = $false,
-    [switch]$Clean = $false
+    [switch]$Clean = $false,
+    [switch]$VerboseCli = $false    # Pass-through verbosity for CLI execution
 )
 
 # Set error action preference
@@ -15,65 +16,45 @@ $ErrorActionPreference = "Stop"
 # Import modules for better console output
 if (-not (Get-Module -Name PSWriteColor -ListAvailable)) {
     Write-Host "Installing PSWriteColor module for improved output..."
-    Install-Module -Name PSWriteColor -Force -Scope CurrentUser
+    Install-Module -Name PSWriteColor -Force -Scope CurrentUser -ErrorAction SilentlyContinue
 }
 Import-Module PSWriteColor -ErrorAction SilentlyContinue
 
 # Define paths
 $RootDir = $PSScriptRoot
-$LogDir = Join-Path $RootDir "logs"
+$ScriptLogDir = Join-Path $RootDir "logs" # For this script's summary log
 $ExampleDir = Join-Path $RootDir "examples"
+$CliProjectPath = "LibreSolvE.CLI\LibreSolvE.CLI.csproj"
 
-# Ensure log directory exists
-if (-not (Test-Path -Path $LogDir)) {
-    New-Item -Path $LogDir -ItemType Directory | Out-Null
+# Ensure script log directory exists
+if (-not (Test-Path -Path $ScriptLogDir)) {
+    New-Item -Path $ScriptLogDir -ItemType Directory | Out-Null
 }
+$ScriptOverallLogFile = Join-Path $ScriptLogDir "build_test_summary_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+$ScriptLogContent = New-Object System.Text.StringBuilder
 
-# Function to show a header
-function Show-Header {
-    param (
-        [string]$Title
+# Function to log to both console (if not quiet) and script log builder
+function Log-Output {
+    param(
+        [string]$Message,
+        [string]$Type = "INFO" # INFO, SUCCESS, ERROR, WARNING, HEADER
     )
-    Write-Color -Text "`n==== ", $Title, " ====" -Color White, Cyan, White
+    $Timestamp = Get-Date -Format 'HH:mm:ss'
+    $LogEntry = "[$Timestamp $Type] $Message"
+    [void]$ScriptLogContent.AppendLine($LogEntry)
+
+    switch ($Type) {
+        "HEADER" { Write-Color -Text "`n==== ", $Message, " ====" -Color White, Cyan, White }
+        "SUCCESS" { Write-Color -Text "[", "SUCCESS", "] ", $Message -Color White, Green, White, White }
+        "ERROR" { Write-Color -Text "[", "ERROR", "] ", $Message -Color White, Red, White, White }
+        "WARNING" { Write-Color -Text "[", "WARNING", "] ", $Message -Color White, Yellow, White, White }
+        default { Write-Color -Text "[", "INFO", "] ", $Message -Color White, Blue, White, White } # INFO
+    }
 }
 
-# Function to show a success message
-function Show-Success {
-    param (
-        [string]$Message
-    )
-    Write-Color -Text "[", "SUCCESS", "] ", $Message -Color White, Green, White, White
-}
-
-# Function to show an error message
-function Show-Error {
-    param (
-        [string]$Message
-    )
-    Write-Color -Text "[", "ERROR", "] ", $Message -Color White, Red, White, White
-}
-
-# Function to show a warning message
-function Show-Warning {
-    param (
-        [string]$Message
-    )
-    Write-Color -Text "[", "WARNING", "] ", $Message -Color White, Yellow, White, White
-}
-
-# Function to show an info message
-function Show-Info {
-    param (
-        [string]$Message
-    )
-    Write-Color -Text "[", "INFO", "] ", $Message -Color White, Blue, White, White
-}
-
-# Configure Java environment for ANTLR
+# Configure Java environment (remains the same)
 function Configure-JavaEnvironment {
-    Show-Header "Configuring Java Environment"
-
-    # Try to find Java installation
+    Log-Output -Message "Configuring Java Environment" -Type HEADER
     $JavaPaths = @(
         "C:\Program Files\OpenJDK\jdk-22.0.2",
         "C:\Program Files\Microsoft\jdk-11.0.27.6-hotspot",
@@ -81,269 +62,222 @@ function Configure-JavaEnvironment {
         "C:\Program Files\Java\jdk-11",
         "C:\Program Files\Eclipse Adoptium\jdk-17"
     )
-
     $JavaFound = $false
     $DesiredJavaHome = $null
-
-    # Check each potential Java location
     foreach ($Path in $JavaPaths) {
         if (Test-Path (Join-Path $Path "bin\java.exe")) {
-            $DesiredJavaHome = $Path
-            $JavaFound = $true
-            if ($Verbose) {
-                Show-Info "Found Java at: $DesiredJavaHome"
-            }
+            $DesiredJavaHome = $Path; $JavaFound = $true
+            if ($VerboseScript) { Log-Output "Found Java at: $DesiredJavaHome" }
             break
         }
     }
-
-    # If not found in standard locations, check JAVA_HOME
     if (-not $JavaFound -and $env:JAVA_HOME) {
         if (Test-Path (Join-Path $env:JAVA_HOME "bin\java.exe")) {
-            $DesiredJavaHome = $env:JAVA_HOME
-            $JavaFound = $true
-            if ($Verbose) {
-                Show-Info "Found Java via existing JAVA_HOME: $DesiredJavaHome"
-            }
+            $DesiredJavaHome = $env:JAVA_HOME; $JavaFound = $true
+            if ($VerboseScript) { Log-Output "Found Java via existing JAVA_HOME: $DesiredJavaHome" }
         }
     }
-
-    # If still not found, try to find java in PATH
     if (-not $JavaFound) {
         try {
             $JavaLocation = (Get-Command java -ErrorAction SilentlyContinue).Source
             if ($JavaLocation) {
-                $DesiredJavaHome = Split-Path (Split-Path $JavaLocation -Parent) -Parent
-                $JavaFound = $true
-                if ($Verbose) {
-                    Show-Info "Found Java in PATH: $DesiredJavaHome"
-                }
+                $DesiredJavaHome = Split-Path (Split-Path $JavaLocation -Parent) -Parent; $JavaFound = $true
+                if ($VerboseScript) { Log-Output "Found Java in PATH: $DesiredJavaHome" }
             }
         }
-        catch {
-            # Java not in PATH
-        }
+        catch {}
     }
-
-    if (-not $JavaFound) {
-        Show-Error "No suitable Java installation found."
-        exit 1
-    }
-
-    # Set Java environment variables for this session
+    if (-not $JavaFound) { Log-Output "No suitable Java installation found." -Type ERROR; return $false }
     $env:JAVA_HOME = $DesiredJavaHome
     $env:Path = "$($env:JAVA_HOME)\bin;$($env:Path)"
-
-    Show-Success "Java environment configured successfully"
+    Log-Output "Java environment configured successfully" -Type SUCCESS
+    return $true
 }
 
-# Clean solution
+# Clean solution (remains the same)
 function Clean-Solution {
-    Show-Header "Cleaning Solution"
-
+    Log-Output "Cleaning Solution" -Type HEADER
     dotnet clean --nologo
-
-    Show-Success "Solution cleaned successfully"
+    Log-Output "Solution cleaned successfully" -Type SUCCESS
 }
 
-# Build solution
+# Build solution (remains the same, uses Log-Output)
 function Build-Solution {
-    Show-Header "Building Solution"
-
-    $BuildVerbosity = if ($Verbose) { "--verbosity detailed" } else { "" }
-
-    # Use try-catch to capture build errors
+    Log-Output "Building Solution" -Type HEADER
+    $BuildVerbosityArg = if ($VerboseScript) { "--verbosity detailed" } else { "" }
     try {
-        # Run the build and capture all output
-        $BuildOutput = $(dotnet build --nologo $BuildVerbosity 2>&1)
+        $BuildOutput = $(dotnet build --nologo $BuildVerbosityArg 2>&1)
         $BuildExitCode = $LASTEXITCODE
-
-        # Variables to track errors and warnings
-        $ErrorCount = 0
-        $WarningCount = 0
-        $Errors = @()
-        $Warnings = @()
-
-        # Process and display build output
+        $ErrorCount = 0; $WarningCount = 0; $Errors = @(); $Warnings = @()
         $BuildOutput | ForEach-Object {
             $Line = $_
             if ($Line -match ": error " -or $Line -match "error AVLN[0-9]+:") {
-                # Extract the error code to avoid duplicates
-                if ($Line -match "(error [A-Z0-9]+:)" -or $Line -match "(error AVLN[0-9]+:)") {
-                    $errorCode = $Matches[1]
-                    # Only show error if we haven't seen this exact one before
-                    if ($Errors -notcontains $Line) {
-                        Show-Error $Line
-                        $Errors += $Line
-                        $ErrorCount++
-                    }
-                }
-                else {
-                    Show-Error $Line
-                    $ErrorCount++
-                }
+                if ($Errors -notcontains $Line) { Log-Output $Line -Type ERROR; $Errors += $Line; $ErrorCount++ }
             }
             elseif ($Line -match ": warning ") {
-                # Only show warning if we haven't seen this exact one before
-                if ($Warnings -notcontains $Line) {
-                    Show-Warning $Line
-                    $Warnings += $Line
-                    $WarningCount++
-                }
+                if ($Warnings -notcontains $Line) { Log-Output $Line -Type WARNING; $Warnings += $Line; $WarningCount++ }
             }
-            elseif ($Verbose) {
-                Write-Host $Line
-            }
+            elseif ($VerboseScript) { Log-Output $Line }
         }
-
-        # Check if the build actually succeeded (exit code 0 and no errors)
         if ($BuildExitCode -eq 0 -and $ErrorCount -eq 0) {
-            Show-Success "Build completed successfully"
-            return $true
+            Log-Output "Build completed successfully" -Type SUCCESS; return $true
         }
         else {
-            if ($ErrorCount -gt 0) {
-                Show-Error "Build failed with $ErrorCount error(s) and $WarningCount warning(s)"
-            }
-            else {
-                Show-Error "Build failed (exit code $BuildExitCode)"
-            }
+            if ($ErrorCount -gt 0) { Log-Output "Build failed with $ErrorCount error(s) and $WarningCount warning(s)" -Type ERROR }
+            else { Log-Output "Build failed (exit code $BuildExitCode)" -Type ERROR }
             return $false
         }
     }
-    catch {
-        Show-Error "Build process error: $_"
-        return $false
-    }
+    catch { Log-Output "Build process error: $_" -Type ERROR; return $false }
 }
 
 # Run tests
 function Run-Tests {
-    Show-Header "Running Tests"
-
+    Log-Output "Running Tests" -Type HEADER
     $OverallResult = $true
-    $TestCount = 0
-    $PassCount = 0
-    $FailCount = 0
-
-    # Get all .lse files in the examples directory
+    $TestCount = 0; $PassCount = 0; $FailCount = 0
     $TestFiles = Get-ChildItem -Path $ExampleDir -Filter "*.lse"
     $TotalFiles = $TestFiles.Count
-
-    Show-Info "Found $TotalFiles test files to process."
+    Log-Output "Found $TotalFiles test files to process."
 
     foreach ($File in $TestFiles) {
         $TestCount++
         $PaddedCount = "{0:D3}" -f $TestCount
-        $LogFile = Join-Path $LogDir "run_${PaddedCount}_$($File.Name).txt"
 
-        Write-Color -Text "`n===== [", "$TestCount", "/", "$TotalFiles", "] Processing: ", $File.Name, " =====" -Color White, Cyan, White, Cyan, White, Cyan, White
+        # Determine path for the .log file (next to .lse)
+        $LseLogFilePath = Join-Path $File.DirectoryName "$($File.BaseName).log"
+
+        Log-Output -Message "`n===== [$TestCount/$TotalFiles] Processing: $($File.Name) =====" -Type HEADER
+
+        # CLI arguments
+        $CliArgs = @(
+            "--project", $CliProjectPath,
+            "--", # Separator for passthrough arguments
+            "--input-file", $File.FullName
+        )
+        if ($VerboseCli) {
+            $CliArgs += "--verbose" # This tells CLI to be verbose to console AND create its default .log file
+            # The CLI will create its own $LseLogFilePath if --verbose is passed and no --verbose-log-file is specified
+        }
+        else {
+            # If CLI is not verbose, explicitly tell it to create the .log file for this script's record keeping,
+            # especially for failures.
+            $CliArgs += "--verbose-log-file", $LseLogFilePath
+        }
+        # Add other CLI options if needed, e.g. --solver based on script params
 
         try {
-            # Run the test and capture output
-            $Output = dotnet run --project LibreSolvE.CLI\LibreSolvE.CLI.csproj -- --input-file "$($File.FullName)" --verbose 2>&1
+            # Run the test; CLI output will go to console if not quiet, and to its own .log if verbose
+            $CliOutput = $(dotnet run $CliArgs 2>&1) # Capture CLI's stdout and stderr
             $Result = $LASTEXITCODE
 
-            # Save output to log file
-            $Output | Out-File -FilePath $LogFile -Encoding utf8
-
-            # Check for critical errors but treat certain warnings as non-fatal
-            $HasCriticalError = $false
-
-            # Loop through output lines to find critical errors but ignore the warning
-            # about the IntegralTable directive step size
-            foreach ($line in $Output) {
-                if ($line -match "Error:" -and
-                    !($line -match "Warning: Could not interpret step size .* in \$IntegralTable")) {
-                    $HasCriticalError = $true
-                    break
-                }
+            # Log CLI's own console output to this script's overall log for summary
+            if ($VerboseScript -or $Result -ne 0) {
+                # Log output if script is verbose or if there was an error
+                [void]$ScriptLogContent.AppendLine("--- CLI Output for $($File.Name) ---")
+                $CliOutput | ForEach-Object { [void]$ScriptLogContent.AppendLine("  $_") }
+                [void]$ScriptLogContent.AppendLine("--- End CLI Output ---")
             }
 
-            if ($Result -ne 0 -or $HasCriticalError) {
-                $FailCount++
-                $OverallResult = $false
-                Show-Error "Processing $($File.Name) failed"
-
+            if ($Result -ne 0) {
+                $FailCount++; $OverallResult = $false
+                Log-Output -Message "Processing $($File.Name) FAILED (CLI Exit Code: $Result)" -Type ERROR
+                Log-Output -Message "Detailed execution log for this failure should be at: $LseLogFilePath" -Type INFO # Inform about the .log file
                 if (-not $Continue) {
-                    Show-Warning "Stopping on first failure. Use -Continue to run all tests."
+                    Log-Output "Stopping on first failure. Use -Continue to run all tests." -Type WARNING
                     break
                 }
             }
             else {
                 $PassCount++
-                Show-Success "Processing $($File.Name) succeeded"
+                Log-Output -Message "Processing $($File.Name) succeeded" -Type SUCCESS
+                if ($VerboseCli) {
+                    # If CLI was verbose, it created a .log file
+                    Log-Output -Message "Detailed execution log for this success should be at: $LseLogFilePath" -Type INFO
+                }
             }
         }
         catch {
-            $FailCount++
-            $OverallResult = $false
-            Show-Error "Error processing $($File.Name): $_"
-
+            $FailCount++; $OverallResult = $false
+            Log-Output -Message "Error running CLI for $($File.Name): $_" -Type ERROR
             if (-not $Continue) {
-                Show-Warning "Stopping on first failure. Use -Continue to run all tests."
+                Log-Output "Stopping on first failure. Use -Continue to run all tests." -Type WARNING
                 break
             }
         }
-
-        Show-Info "Log file: $LogFile"
     }
 
-    # Summary
-    Show-Header "Test Summary"
-    Write-Host "Total tests: $TestCount/$TotalFiles"
-    Write-Host "Passed: $PassCount"
-    Write-Host "Failed: $FailCount"
-
-    if ($OverallResult) {
-        Show-Success "ALL TESTS PASSED successfully."
-    }
-    else {
-        Show-Error "SOME TESTS FAILED. Check log files for details."
-    }
-
-    Write-Host "Log files are available in: $LogDir\"
+    Log-Output "Test Summary" -Type HEADER
+    Log-Output "Total tests attempted: $TestCount/$TotalFiles"
+    Log-Output "Passed: $PassCount"
+    Log-Output "Failed: $FailCount"
+    if ($OverallResult) { Log-Output "OVERALL TEST RESULT: PASSED" -Type SUCCESS }
+    else { Log-Output "OVERALL TEST RESULT: FAILED" -Type ERROR }
 
     return $OverallResult
 }
 
-# Main script execution
-try {
-    # Show banner
-    Clear-Host
-    Write-Color -Text "`n", "LibreSolvE", " Build & Test Script" -Color White, Green, White
-    Write-Host "=================================="
+# Function to clear logs and output files
+function Clear-OutputFiles {
+    Log-Output "Clearing previous output files..." -Type HEADER
 
-    # Configure Java environment
-    Configure-JavaEnvironment
-
-    # Clean if requested
-    if ($Clean) {
-        Clean-Solution
-    }
-
-    # Build solution
-    $BuildResult = Build-Solution
-
-    # Only run tests if build succeeded and tests are not disabled
-    if ($BuildResult -and -not $NoTests) {
-        $TestResult = Run-Tests
-        if (-not $TestResult) {
-            exit 1
+    # Clear specific CLI output files from examples directory
+    $ExampleFiles = Get-ChildItem -Path $ExampleDir
+    foreach ($File in $ExampleFiles) {
+        if ($File.Extension -eq ".log" -or $File.Extension -eq ".md" -or $File.Extension -eq ".svg") {
+            if ($File.Name -notlike "README.md") {
+                # Avoid deleting a potential README in examples
+                if ($VerboseScript) { Log-Output "Removing $($File.FullName)" }
+                Remove-Item -Path $File.FullName -Force -ErrorAction SilentlyContinue
+            }
         }
     }
-    elseif (-not $BuildResult) {
-        Show-Error "Build failed. Tests will not be run."
+    Log-Output "Cleared .log, .md, .svg files from $ExampleDir" -Type INFO
+
+    # Clear PowerShell script's own summary logs from root logs directory
+    # Keep Serilog/AOP runtime logs if they are named differently or in subfolders.
+    # This example clears all .log files from $ScriptLogDir - be cautious if GUI Serilog logs here too.
+    # It's better if CLI Serilog runtime logs and GUI Serilog runtime logs go to a specific subfolder or have distinct names.
+    if (Test-Path $ScriptLogDir) {
+        Get-ChildItem -Path $ScriptLogDir -Filter "*.log" | ForEach-Object {
+            if ($VerboseScript) { Log-Output "Removing script log: $($_.FullName)" }
+            Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue
+        }
+        Log-Output "Cleared previous script summary logs from $ScriptLogDir" -Type INFO
+    }
+}
+
+
+# Main script execution
+try {
+    Clear-Host
+    Log-Output -Message "LibreSolvE Build & Test Script" -Type HEADER
+    Log-Output -Message "==================================" -Type HEADER
+
+    Clear-OutputFiles
+
+    if (-not (Configure-JavaEnvironment)) { exit 1 }
+    if ($Clean) { Clean-Solution }
+    if (-not (Build-Solution)) {
+        Log-Output "Build failed. Script will exit." -Type ERROR
         exit 1
     }
 
-    # All done
-    if ($BuildResult -and ($NoTests -or $TestResult)) {
-        Show-Success "Build and test completed successfully"
+    $TestResult = $true
+    if (-not $NoTests) {
+        $TestResult = Run-Tests
     }
-    exit 0
+
+    Log-Output "Build and test script finished." -Type HEADER
+    if ($TestResult) { exit 0 } else { exit 1 }
+
 }
 catch {
-    Show-Error "Script execution failed: $_"
+    Log-Output "SCRIPT EXECUTION FAILED: $_" -Type ERROR
     exit 1
+}
+finally {
+    # Write the script's overall log file
+    Set-Content -Path $ScriptOverallLogFile -Value $ScriptLogContent.ToString() -Encoding UTF8
+    Write-Host "`nOverall script log saved to: $ScriptOverallLogFile"
 }

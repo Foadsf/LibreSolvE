@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization; // For consistent number parsing
 using System.Linq;
+using Antlr4.Runtime; // For Token information for error reporting
 
 namespace LibreSolvE.Core.Parsing;
 
@@ -15,6 +16,7 @@ namespace LibreSolvE.Core.Parsing;
 /// </summary>
 public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
 {
+    #region File Level Visitor
     /// <summary>
     /// Visits the root of the parse tree (the entire file).
     /// </summary>
@@ -42,6 +44,7 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
         }
         return fileNode;
     }
+    #endregion File Level Visitor
 
     #region Statement Level Visitors
     // These methods correspond to the # labels on the 'statement' rule alternatives
@@ -67,9 +70,27 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
         // The context holds the result of matching the 'equation' rule. Visit that specific rule context.
         return Visit(context.equation());
     }
-    #endregion
 
-    #region Rule Level Visitors
+    /// <summary>
+    /// Visit a directive statement and create a DirectiveNode
+    /// </summary>
+    public override AstNode VisitDirectiveStatement([NotNull] EesParser.DirectiveStatementContext context)
+    {
+        string directiveText = context.DIRECTIVE().GetText();
+        return new DirectiveNode(directiveText);
+    }
+
+    /// <summary>
+    /// Visits a plot statement and creates a PlotCommandNode
+    /// </summary>
+    public override AstNode VisitPlotStatement([NotNull] EesParser.PlotStatementContext context)
+    {
+        string plotCommand = context.PLOT_CMD().GetText();
+        return new PlotCommandNode(plotCommand);
+    }
+    #endregion Statement Level Visitors
+
+    #region Rule Level Visitors for Equations and Assignments
     // These methods visit the specific grammar rules (equation, assignment alternatives)
     // and construct the corresponding AST nodes using the labeled elements from the grammar.
 
@@ -87,34 +108,66 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
 
     /// <summary>
     /// Visits the 'ExplicitAssignment' rule context (using ':=').
-    /// Constructs an AssignmentNode.
+    /// For compatibility, converts to a regular assignment node but with a warning.
     /// </summary>
     public override AstNode VisitExplicitAssignment([NotNull] EesParser.ExplicitAssignmentContext context)
     {
-        // Grammar rule: assignment: variable=ID ASSIGN rhs=expression SEMI?   # ExplicitAssignment
-        string varName = context.variable.Text; // Get text from the labeled 'variable' ID token
+        // Extract the variable name from the token
+        string varName = context.variable.Text;
         VariableNode variableNode = new VariableNode(varName);
-        ExpressionNode rhs = (ExpressionNode)Visit(context.rhs); // Visit the labeled 'rhs' expression
+
+        // Visit the right-hand side expression
+        ExpressionNode rhs = (ExpressionNode)Visit(context.rhs);
+
+        // Output a warning about := usage being limited in future versions
+        Console.WriteLine($"Warning: The explicit assignment operator ':=' for '{varName}' is reserved in EES." +
+                        " It will be treated as a regular assignment, but future versions may limit its use to functions and procedures.");
+
+        // Return a normal AssignmentNode
         return new AssignmentNode(variableNode, rhs);
     }
 
     /// <summary>
     /// Visits the 'ImplicitAssignment' rule context (using '=').
-    /// Constructs an EquationNode, reflecting EES semantics where 'Var = Expr' is an equation.
+    /// Constructs an EquationNode. The StatementExecutor will later categorize
+    /// this as an assignment if the RHS evaluates to a constant expression.
     /// </summary>
     public override AstNode VisitImplicitAssignment([NotNull] EesParser.ImplicitAssignmentContext context)
     {
         // Grammar rule: assignment: variable=ID EQ rhs=expression SEMI?       # ImplicitAssignment
-        // Create an EquationNode because '=' means equality in EES equations.
-        VariableNode lhs = new VariableNode(context.variable.Text); // The variable is the LHS expression
-        ExpressionNode rhs = (ExpressionNode)Visit(context.rhs);   // Visit the labeled 'rhs' expression
+        VariableNode lhs = new VariableNode(context.variable.Text);
+        ExpressionNode rhs = (ExpressionNode)Visit(context.rhs);
         return new EquationNode(lhs, rhs);
     }
-    #endregion
+    #endregion Rule Level Visitors for Equations and Assignments
 
     #region Expression Visitors
     // These methods visit the different expression rule alternatives (# labels)
     // and construct the corresponding AST expression nodes.
+
+    /// <summary>
+    /// Visits a unary minus expression.
+    /// </summary>
+    public override AstNode VisitUnaryMinusExpr([NotNull] EesParser.UnaryMinusExprContext context)
+    {
+        ExpressionNode operand = (ExpressionNode)Visit(context.expression());
+
+        // Create a binary operation with 0 - operand
+        return new BinaryOperationNode(
+            new NumberNode(0.0),
+            BinaryOperator.Subtract,
+            operand);
+    }
+
+    /// <summary>
+    /// Visits a power expression.
+    /// </summary>
+    public override AstNode VisitPowExpr([NotNull] EesParser.PowExprContext context)
+    {
+        ExpressionNode left = (ExpressionNode)Visit(context.left);
+        ExpressionNode right = (ExpressionNode)Visit(context.right);
+        return new BinaryOperationNode(left, BinaryOperator.Power, right);
+    }
 
     /// <summary>
     /// Visits a multiplication or division expression.
@@ -141,17 +194,8 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
     }
 
     /// <summary>
-    /// Visits a power expression.
-    /// </summary>
-    public override AstNode VisitPowExpr([NotNull] EesParser.PowExprContext context)
-    {
-        ExpressionNode left = (ExpressionNode)Visit(context.left);
-        ExpressionNode right = (ExpressionNode)Visit(context.right);
-        return new BinaryOperationNode(left, BinaryOperator.Power, right);
-    }
-
-    /// <summary>
     /// Visits a parenthesized expression. Returns the AST node for the inner expression.
+    /// This is part of the 'atom' rule in the grammar, but acts as a precedence controller for expressions.
     /// </summary>
     public override AstNode VisitParenExpr([NotNull] EesParser.ParenExprContext context)
     {
@@ -159,18 +203,7 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
         // Simply visit the nested expression context
         return Visit(context.expression());
     }
-
-    /// <summary>
-    /// Visits the base case 'atom' expression, which simply delegates to the specific atom type.
-    /// This method might not be strictly necessary if all atom alternatives are handled directly,
-    /// but overriding it can sometimes help with debugging or complex aggregation.
-    /// </summary>
-    // public override AstNode VisitAtomExpr([NotNull] EesParser.AtomExprContext context)
-    // {
-    //      return base.VisitAtomExpr(context); // Or Visit(context.atom());
-    // }
-
-    #endregion
+    #endregion Expression Visitors
 
     #region Atom Visitors
     // These methods visit the specific atom rule alternatives (# labels)
@@ -199,11 +232,31 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
     }
 
     /// <summary>
+    /// Visits a STRING_LITERAL token and creates a StringLiteralNode.
+    /// </summary>
+    public override AstNode VisitStringAtom([NotNull] EesParser.StringAtomContext context)
+    {
+        // Get the full text, including quotes, and pass to the node constructor for unescaping
+        string literalWithQuotes = context.STRING_LITERAL().GetText();
+        return new StringLiteralNode(literalWithQuotes);
+    }
+
+    /// <summary>
+    /// Visits a function call atom and delegates to the function call visitor.
+    /// </summary>
+    public override AstNode VisitFuncCallAtom([NotNull] EesParser.FuncCallAtomContext context)
+    {
+        return Visit(context.functionCall());
+    }
+    #endregion Atom Visitors
+
+    #region Function Call Visitor
+    /// <summary>
     /// Visits a function call and creates a FunctionCallNode.
     /// </summary>
     public override AstNode VisitFunctionCall([NotNull] EesParser.FunctionCallContext context)
     {
-        string functionName = context.fname.Text;
+        string functionName = context.fname.Text; // fname is the ID token
         var arguments = new List<ExpressionNode>();
 
         // Process arguments if any
@@ -225,64 +278,22 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
 
         return new FunctionCallNode(functionName, arguments);
     }
+    #endregion Function Call Visitor
 
-    /// <summary>
-    /// Visits a function call atom and delegates to the function call visitor.
-    /// </summary>
-    public override AstNode VisitFuncCallAtom([NotNull] EesParser.FuncCallAtomContext context)
-    {
-        return Visit(context.functionCall());
-    }
-    #endregion
-
-    #region Default Aggregation (Optional)
+    #region Default Aggregation (Optional but good practice)
     /// <summary>
     /// Controls how results from visiting multiple children are combined.
     /// The default ANTLR behavior often returns the result of the last child visited.
     /// For building a specific AST node in overridden methods, this default is usually fine.
+    /// If a rule has multiple children and you want to aggregate them (e.g., into a list),
+    /// you'd override the specific VisitMyRule and handle aggregation there.
+    /// This method is a fallback.
     /// </summary>
     protected override AstNode AggregateResult(AstNode aggregate, AstNode nextResult)
     {
+        // If nextResult is null, stick with the current aggregate.
+        // This is often the desired behavior when visiting optional parts of rules.
         return nextResult ?? aggregate;
     }
-    #endregion
-
-    public override AstNode VisitStringAtom([NotNull] EesParser.StringAtomContext context)
-    {
-        // Get the full text, including quotes, and pass to the node constructor for unescaping
-        string literalWithQuotes = context.STRING_LITERAL().GetText();
-        return new StringLiteralNode(literalWithQuotes);
-    }
-
-    /// <summary>
-    /// Visit a directive statement and create a DirectiveNode
-    /// </summary>
-    public override AstNode VisitDirectiveStatement([NotNull] EesParser.DirectiveStatementContext context)
-    {
-        string directiveText = context.DIRECTIVE().GetText();
-        return new DirectiveNode(directiveText);
-    }
-
-    /// <summary>
-    /// Visits a unary minus expression.
-    /// </summary>
-    public override AstNode VisitUnaryMinusExpr([NotNull] EesParser.UnaryMinusExprContext context)
-    {
-        ExpressionNode operand = (ExpressionNode)Visit(context.expression());
-
-        // Create a binary operation with 0 - operand
-        return new BinaryOperationNode(
-            new NumberNode(0.0),
-            BinaryOperator.Subtract,
-            operand);
-    }
-
-    /// <summary>
-    /// Visits a plot statement and creates a PlotCommandNode
-    /// </summary>
-    public override AstNode VisitPlotStatement([NotNull] EesParser.PlotStatementContext context)
-    {
-        string plotCommand = context.PLOT_CMD().GetText();
-        return new PlotCommandNode(plotCommand);
-    }
+    #endregion Default Aggregation
 }
