@@ -1,0 +1,165 @@
+name: build-binaries
+
+# Produces one monolithic, self-contained executable per platform: no .NET
+# runtime required on the target machine, no side-by-side DLLs.
+#
+# Deliberate choices, each with a reason:
+#
+#  * Only LibreSolvE.CLI is built. Sparse-checkout is a LOCAL view -- CI checks
+#    out the whole repository, so LibreSolvE.GUI and LibreSolvE.TUI are present
+#    here even though they are absent from the working tree on the dev machine.
+#    Naming the CLI project explicitly is what keeps the GUI/TUI out of the build.
+#
+#  * PublishTrimmed is NOT enabled. This app uses ANTLR, Serilog and Fody
+#    (MethodBoundaryAspect) aspect weaving, all of which lean on reflection;
+#    trimming would very likely break them at run time rather than build time,
+#    which is the worst place to find out. Trimming can be revisited once there
+#    is a conformance suite to prove the trimmed binary still behaves.
+#
+#  * The smoke test runs the binary that was just built and asserts BOTH
+#    directions -- a valid file exits 0 and an invalid one exits non-zero. A
+#    build check that only ever runs valid input cannot detect the class of bug
+#    that made every example "pass" while the parser rejected 20 of them.
+
+on:
+  push:
+    branches: [main, master, cli-only-ees-compat]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, rid: win-x64,      ext: '.exe', archive: zip }
+          - { os: windows-latest, rid: win-arm64,    ext: '.exe', archive: zip }
+          - { os: ubuntu-latest,  rid: linux-x64,    ext: '',     archive: tar }
+          - { os: ubuntu-latest,  rid: linux-arm64,  ext: '',     archive: tar }
+          - { os: ubuntu-latest,  rid: linux-musl-x64, ext: '',   archive: tar }
+          - { os: macos-latest,   rid: osx-x64,      ext: '',     archive: tar }
+          - { os: macos-latest,   rid: osx-arm64,    ext: '',     archive: tar }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish single-file self-contained
+        shell: bash
+        run: |
+          dotnet publish LibreSolvE.CLI/LibreSolvE.CLI.csproj \
+            -c Release \
+            -r ${{ matrix.rid }} \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true \
+            -p:DebugType=none \
+            -p:GenerateDocumentationFile=false \
+            -o out/${{ matrix.rid }}
+
+      # The build "succeeding" is not evidence that a single file was produced.
+      # Assert the artifact exists and is the only executable in the directory.
+      - name: Verify a single executable was produced
+        shell: bash
+        run: |
+          bin="out/${{ matrix.rid }}/lse${{ matrix.ext }}"
+          test -f "$bin" || { echo "MISSING: $bin"; ls -la "out/${{ matrix.rid }}"; exit 1; }
+          size=$(wc -c < "$bin")
+          echo "artifact: $bin ($size bytes)"
+          # A single-file publish that silently fell back to loose assemblies
+          # would leave a directory full of DLLs next to the host.
+          dll_count=$(find "out/${{ matrix.rid }}" -name '*.dll' | wc -l)
+          echo "loose dlls: $dll_count"
+          if [ "$dll_count" -ne 0 ]; then
+            echo "NOT monolithic: $dll_count loose DLL(s) alongside the executable"
+            find "out/${{ matrix.rid }}" -name '*.dll'
+            exit 1
+          fi
+          [ "$size" -gt 5000000 ] || { echo "suspiciously small for self-contained"; exit 1; }
+
+      # Only runnable when the RID matches the runner's own architecture.
+      # Cross-compiled targets (arm64 on x64 runners, musl on glibc) are built
+      # but cannot be executed here; that is stated, not silently skipped.
+      - name: Smoke test (native RID only)
+        if: matrix.rid == 'win-x64' || matrix.rid == 'linux-x64' || matrix.rid == 'osx-arm64'
+        shell: bash
+        run: |
+          bin="./out/${{ matrix.rid }}/lse${{ matrix.ext }}"
+          chmod +x "$bin" || true
+
+          echo "--- must SUCCEED on a valid file ---"
+          "$bin" -i examples/000_JustAssignments.lse -q
+          rc=$?
+          echo "exit=$rc"
+          [ "$rc" -eq 0 ] || { echo "FAIL: valid file did not exit 0"; exit 1; }
+
+          echo "--- must FAIL on ':=' at main scope (invalid EES) ---"
+          set +e
+          "$bin" -i examples/003_BuiltinFunctionsAndSolver.lse -q
+          rc=$?
+          set -e
+          echo "exit=$rc"
+          [ "$rc" -ne 0 ] || { echo "FAIL: invalid file exited 0 -- the exit code is not wired up"; exit 1; }
+
+      - name: Skipped smoke test notice
+        if: matrix.rid != 'win-x64' && matrix.rid != 'linux-x64' && matrix.rid != 'osx-arm64'
+        run: echo "::notice::${{ matrix.rid }} is cross-compiled on this runner and was NOT executed. Built only."
+
+      # Packaged per-platform rather than with one tool: tar preserves the
+      # executable bit that Linux/macOS users need, while Windows users get a
+      # zip they can open without extra software.
+      - name: Package (zip, Windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "out/${{ matrix.rid }}/lse${{ matrix.ext }}" `
+                           -DestinationPath "lse-${{ matrix.rid }}.zip" -Force
+
+      - name: Package (tar.gz, Unix)
+        if: matrix.archive == 'tar'
+        shell: bash
+        run: |
+          chmod +x "out/${{ matrix.rid }}/lse"
+          tar -czf "lse-${{ matrix.rid }}.tar.gz" -C "out/${{ matrix.rid }}" lse
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lse-${{ matrix.rid }}
+          path: lse-${{ matrix.rid }}.*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la dist
+          # gh is preinstalled on GitHub runners -- no third-party release action,
+          # which keeps the supply chain for a public repo down to actions/*.
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes
