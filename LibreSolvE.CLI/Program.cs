@@ -196,7 +196,13 @@ class Program
                 AnsiConsole.MarkupLine($"Processing: [cyan bold]{Path.GetFileName(inputFile.FullName)}[/]");
             }
 
-            ExecuteProgram(inputFile, explicitOutputFile, solver, plotFormat, quiet, verboseConsole, explicitVerboseLogFile);
+            // The exit code MUST reach the process. Previously the return value was
+            // discarded and context.ExitCode was never set, so `lse` exited 0 even
+            // while printing "Processing failed" -- every script, CI job and
+            // conformance harness keyed on the exit code saw success on a file the
+            // parser had rejected.
+            context.ExitCode = ExecuteProgram(inputFile, explicitOutputFile, solver, plotFormat,
+                                              quiet, verboseConsole, explicitVerboseLogFile);
         });
 
         int result = await new CommandLineBuilder(rootCommand).UseDefaults().Build().InvokeAsync(args);
@@ -209,7 +215,7 @@ class Program
 
     #region Main Execution Logic
     [Log]
-    static void ExecuteProgram(
+    static int ExecuteProgram(
         FileInfo inputFile,
         FileInfo? explicitConciseOutputFile,
         SolverType solverType,
@@ -314,6 +320,7 @@ class Program
             }
             #endregion Final Console Status
         }
+        return exitCode;
     }
     #endregion Main Execution Logic
 
