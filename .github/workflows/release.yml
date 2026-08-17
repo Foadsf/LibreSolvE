@@ -54,6 +54,17 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      # ANTLR generates the lexer/parser at build time by shelling out to Java
+      # (Antlr4.Build.Tasks.RunAntlrTool.SetupJava). The Windows and Linux runner
+      # images happen to ship a JDK; the macOS image does not, and both macOS
+      # targets failed with "Cannot find Java executable" on the first run.
+      # Pin it on every runner rather than relying on an implicit preinstall --
+      # that dependency is real whether or not the image happens to satisfy it.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - name: Publish single-file self-contained
         shell: bash
         run: |
