@@ -1,0 +1,81 @@
+{
+  "_comment": "Phase 2 conformance harness manifest (PLAN.md). tolerance is applied as |actual-expected| <= tolerance * max(1, |expected|), loose enough for NelderMead's observed solver jitter (~1e-8 relative on 003/004/005) while still catching a real regression. expectedValues for the 7 in-scope files were captured from a fresh run and independently hand-verified against each file's own algebra/embedded comments before being written here -- see LibreSolvE.CLI git history around commit 3094213. Deferred files carry no expectedValues; only expectSucceed=false is asserted, with 'note' tracing the reason to COMPATIBILITY.md so a future fix removes the entry deliberately rather than the harness silently going stale.",
+  "tolerance": 1e-6,
+  "cases": [
+    {
+      "file": "000_JustAssignments.lse",
+      "expectSucceed": true,
+      "expectedValues": {
+        "Length": 10.5, "Width": 5.2, "Height": 2,
+        "Area": 54.6, "Volume": 109.2, "Perimeter": 31.4, "Factor": 2.718
+      }
+    },
+    {
+      "file": "001_BasicEquationsMixed.lse",
+      "expectSucceed": true,
+      "expectedValues": {
+        "T_cold": 20, "Eff": 0.85, "CP": 4.18, "m_dot": 2, "Q_dot": 200,
+        "DeltaT": 23.923444976076556, "T_hot": 40.334928229665074
+      }
+    },
+    {
+      "file": "002_ExplicitAssignmentsAndEquations.lse",
+      "expectSucceed": true,
+      "expectedValues": {
+        "T_cold": 20, "Eff": 0.85, "CP": 4.18, "m_dot": 2, "Q_dot": 200,
+        "DeltaT": 23.923444976076556, "T_hot": 40.334928229665074,
+        "DeltaT_check": 23.923444976076556, "DeltaT_error": 0
+      }
+    },
+    {
+      "file": "003_BuiltinFunctionsAndSolver.lse",
+      "expectSucceed": true,
+      "expectedValues": {
+        "pi": 3.14159265359, "g": 9.81,
+        "y1": 0.7071067811865476, "y2": 0.5, "y3": 1.0,
+        "y4": 1.4142135623730951, "y5": 2.302585092994046, "y6": 2.0,
+        "y7": 5, "y8": 2.718281828459045, "y9": 7, "y10": 3, "y11": 3.14,
+        "L": 1, "theta_max": 15, "theta_rad": 0.2617993877991494,
+        "T": 2.006066680710779, "h": 0.03407417371093613,
+        "x": 3.3333333333333335, "y": 6.666666666666667
+      }
+    },
+    {
+      "file": "004_SingleEquation.lse",
+      "expectSucceed": true,
+      "expectedValues": { "TargetValue": 9, "x": 3 }
+    },
+    {
+      "file": "005_SimpleLinearSystem.lse",
+      "expectSucceed": true,
+      "expectedValues": { "x": 2, "y": 1 }
+    },
+    {
+      "file": "006_UnitsAndConvert.lse",
+      "expectSucceed": true,
+      "expectedValues": {
+        "Length_ft": 10, "Width_in": 6, "Temp_C": 25, "Mass_lb": 5,
+        "Length_m": 3.048, "Width_m": 0.1524, "Mass_kg": 2.26796185,
+        "Temp_K": 298.15, "Area": 0.4645152
+      }
+    },
+    { "file": "007_SimpleOdeSolver.lse", "expectSucceed": false, "note": "main-scope := (COMPATIBILITY.md Rule 3), plus $IntegralAutoStep (unconfirmed EES syntax, SS6 second table)" },
+    { "file": "008_OdeIntegralAndPlot.lse", "expectSucceed": false, "note": "main-scope :=, plus PLOT (COMPATIBILITY.md Rule 5 -- not an EES statement)" },
+    { "file": "009_OdeIntegralFixedStep.lse", "expectSucceed": false, "note": "main-scope :=, plus PLOT" },
+    { "file": "010_OdeIntegralAdaptiveControl.lse", "expectSucceed": false, "note": "main-scope :=, $IntegralAutoStep, PLOT" },
+    { "file": "011_SpringMassDamper.lse", "expectSucceed": false, "note": "main-scope :=, $IntegralAutoStep, PLOT" },
+    { "file": "012_RCCircuitResponse.lse", "expectSucceed": false, "note": "main-scope :=, $IntegralAutoStep, PLOT (x2)" },
+    { "file": "013_PendulumWithUnits.lse", "expectSucceed": false, "note": "main-scope :=, $IntegralAutoStep, PLOT, real [unit] usage patterns (SS7 deferred to Phase 4)" },
+    { "file": "014_DoublePendulum.lse", "expectSucceed": false, "note": "main-scope :=, $IntegralAutoStep, PLOT (x3)" },
+    { "file": "015_VanDerPolOscillator.lse", "expectSucceed": false, "note": "main-scope :=, $IntegralAutoStep, PLOT (x3)" },
+    { "file": "016_LorenzAttractor.lse", "expectSucceed": false, "note": "main-scope :=, $IntegralAutoStep, PLOT (x4)" },
+    { "file": "017_PredatorPreyModel.lse", "expectSucceed": false, "note": "main-scope :=, $IntegralAutoStep, PLOT (x2)" },
+    { "file": "018_SIREpidemicModel.lse", "expectSucceed": false, "note": "main-scope :=, $IntegralAutoStep, PLOT (x2)" },
+    { "file": "019_HeatTransfer1D.lse", "expectSucceed": false, "note": "main-scope :=, $IntegralAutoStep, PLOT -- also the file that motivated COMPATIBILITY.md SS1's method-of-lines PDE note" },
+    { "file": "020_OdeAnalyticalSolution_Method1.lse", "expectSucceed": false, "note": "main-scope :=, $IntegralAutoStep" },
+    { "file": "021_OdeAnalyticalSolution_Method2.lse", "expectSucceed": false, "note": "main-scope :=, $IntegralAutoStep" },
+    { "file": "022_OdeAnalyticalSolution_Method3.lse", "expectSucceed": false, "note": "main-scope :=, $IntegralAutoStep" },
+    { "file": "023_OdeAnalyticalSolution_Method4.lse", "expectSucceed": false, "note": "main-scope :=, $IntegralAutoStep" },
+    { "file": "024_OdeAnalyticalSolution_Method5.lse", "expectSucceed": false, "note": "main-scope :=, $IntegralAutoStep" }
+  ]
+}

@@ -32,8 +32,31 @@ permissions:
   contents: read
 
 jobs:
+  test:
+    name: conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      # PLAN.md Phase 2: runs the real Core pipeline (not a subprocess)
+      # against every example in examples/, checked against
+      # LibreSolvE.Conformance/conformance-manifest.json. One runner is
+      # enough -- this is managed .NET double arithmetic with no OS-specific
+      # code path, so there is nothing platform-dependent to catch by
+      # running it seven times. `build` below depends on this, so a broken
+      # PR cannot produce "successful" binaries.
+      - name: dotnet test
+        run: dotnet test LibreSolvE.Conformance/LibreSolvE.Conformance.csproj --nologo
+
   build:
     name: ${{ matrix.rid }}
+    needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
