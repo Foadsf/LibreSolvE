@@ -2,11 +2,11 @@
 "This is another comment style"
 
 { Input values and parameters }
-T_cold = 20 "[C]" // Known cold temperature
-Eff = 0.85 // Known thermal efficiency
-CP = 4.18 "[kJ/kg-K]" // Specific heat of water
-m_dot = 2 "[kg/s]" // Mass flow rate
-Q_dot = 200 "[kW]" // Heat transfer rate
+T_cold = 20 "[C]" { Known cold temperature }
+Eff = 0.85 { Known thermal efficiency }
+CP = 4.18 "[kJ/kg-K]" { Specific heat of water }
+m_dot = 2 "[kg/s]" { Mass flow rate }
+Q_dot = 200 "[kW]" { Heat transfer rate }
 
 { Equations to solve - T_hot and DeltaT are the unknowns }
 T_hot = T_cold + DeltaT * Eff
@@ -19,4 +19,4 @@ DeltaT = Q_dot / m_dot / CP
   LSE will process the 5 constant assignments first, then solve the 2 algebraic equations
   for the 2 unknowns (T_hot, DeltaT).
 }
-// DeltaT = (T_hot - T_cold) / Eff
+{ DeltaT = (T_hot - T_cold) / Eff }

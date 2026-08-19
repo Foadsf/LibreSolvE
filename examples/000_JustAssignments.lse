@@ -9,8 +9,8 @@ Height = 2.0
 Area = Length * Width
 Volume = Area * Height
 
-// Check order dependency (should work)
+{ Check order dependency (should work) }
 Perimeter = 2 * (Length + Width)
 
-// Simple constant
+{ Simple constant }
 Factor = 2.718

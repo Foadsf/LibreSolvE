@@ -3,7 +3,7 @@
 " 2*x + y = 5 "
 " x - y = 1 "
 
-// Equations
+{ Equations }
 2*x + y = 5
 x - y = 1
 

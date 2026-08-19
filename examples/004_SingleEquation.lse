@@ -3,6 +3,6 @@
 
 TargetValue = 9
 
-x^2 = TargetValue // Equation using POW operator
+x^2 = TargetValue { Equation using POW operator }
 
 " Expected result: x = 3 (or -3, solver might find one) "

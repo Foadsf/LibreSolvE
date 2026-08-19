@@ -42,8 +42,11 @@ COMMENT_BRACE : '{' ~[{}]+ '}' -> channel(HIDDEN); // Matches { followed by any 
 // EES double quote comments " ... "
 COMMENT_QUOTE : '"' ('""'|~'"')*? '"' -> channel(HIDDEN); // Matches ", allows escaped "" inside, non-greedy until "
 
-// EES single line comment // ...
-COMMENT_SLASH : '//' ~[\r\n]* -> channel(HIDDEN);
+// '//' is NOT valid EES (COMPATIBILITY.md Rule 2: only { } and " " are
+// comment forms -- manual, general rules, item 3). Deliberately no
+// COMMENT_SLASH rule: a bare '//' now lexes as two DIV tokens, which the
+// parser grammar rejects, so it surfaces as a real syntax error instead of
+// silently being swallowed as a comment.
 
 // --- Whitespace ---
 WS      : [ \t\r\n]+ -> channel(HIDDEN); // Match one or more whitespace characters

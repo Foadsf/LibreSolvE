@@ -116,8 +116,12 @@ jobs:
           [ "$rc" -eq 0 ] || { echo "FAIL: valid file did not exit 0"; exit 1; }
 
           echo "--- must FAIL on ':=' at main scope (invalid EES) ---"
+          # 003 used to be this case; it is now migrated and legitimately
+          # succeeds (COMPATIBILITY.md, Phase 3). 007 is still deferred --
+          # untouched := violations plus the unconfirmed $IntegralAutoStep
+          # directive -- so it stays a real negative for this gate.
           set +e
-          "$bin" -i examples/003_BuiltinFunctionsAndSolver.lse -q
+          "$bin" -i examples/007_SimpleOdeSolver.lse -q
           rc=$?
           set -e
           echo "exit=$rc"

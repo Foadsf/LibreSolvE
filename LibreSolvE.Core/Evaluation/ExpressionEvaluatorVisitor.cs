@@ -110,7 +110,14 @@ public class ExpressionEvaluatorVisitor
             // For actual execution by StatementExecutor, it won't call Evaluate on INTEGRAL this way.
             return 0;
         }
-        // ... (CONVERT, CONVERTTEMP logic - ensure they also propagate _evaluationUsedNonExplicitVariable if their *value* argument does)
+        // CONVERT was missing its own branch here and fell through to "Regular functions" below,
+        // which tries to Evaluate() its string-literal arguments as numeric expressions and then
+        // hits FunctionRegistry's CONVERT stub (an unconditional NotImplementedException). The
+        // real implementation, ConvertUnits(), already existed and was simply never called.
+        else if (string.Equals(funcCall.FunctionName, "CONVERT", StringComparison.OrdinalIgnoreCase))
+        {
+            return ConvertUnits(((StringLiteralNode)funcCall.Arguments[0]).Value, ((StringLiteralNode)funcCall.Arguments[1]).Value);
+        }
         else if (string.Equals(funcCall.FunctionName, "CONVERTTEMP", StringComparison.OrdinalIgnoreCase))
         {
             // ... (argument checks as before) ...
@@ -144,9 +151,12 @@ public class ExpressionEvaluatorVisitor
                 }
             }
 
+            // UnitsNet.QuantityValue does not implement IConvertible, so
+            // Convert.ToDouble(toQuantity.Value, ...) throws InvalidCastException
+            // on every call. IQuantity.As(unit) returns the numeric value in the
+            // target unit directly and is the idiomatic UnitsNet API for this.
             IQuantity fromQuantity = Quantity.From(1.0, fromUnitEnum);
-            IQuantity toQuantity = fromQuantity.ToUnit(toUnitEnum);
-            return Convert.ToDouble(toQuantity.Value, CultureInfo.InvariantCulture);
+            return fromQuantity.As(toUnitEnum);
         }
         catch (UnitsNet.UnitNotFoundException ex) { throw new ArgumentException($"Unit error in CONVERT function: {ex.Message}", ex); }
         catch (Exception ex) { throw new InvalidOperationException($"Error during CONVERT from '{fromUnitStr}' to '{toUnitStr}'. Details: {ex.Message}", ex); }
