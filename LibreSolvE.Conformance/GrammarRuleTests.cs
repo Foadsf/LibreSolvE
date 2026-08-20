@@ -100,6 +100,65 @@ public class GrammarRuleTests
         Assert.Equal("PLOT t, x WITH TITLE 'Foo'", fromQuote[0]);
     }
 
+    // --- COMPATIBILITY.md SS4: real inline units, `T=50 [C]`, unquoted ---
+
+    [Fact]
+    public void BareUnitAnnotation_IsAccepted_AndDoesNotAlterTheValue()
+    {
+        // The 2025 LibreSolvE design used a quoted-comment form, "[C]", which
+        // parses (comments may be any quoted string) but is not how EES
+        // itself carries units. Real EES uses this unquoted form, confirmed
+        // on two independent modern sources predating the only manual this
+        // project has (COMPATIBILITY.md SS4). Before this fix it was a
+        // genuine parse error: bare '[' ']' lexed as visible LBRACK/RBRACK
+        // tokens the parser never consumed.
+        var result = LseRunner.Run("T = 50 [C]\n");
+        Assert.True(result.Succeeded, result.FailureMessage);
+        // The unit must be display-only, never folded into the arithmetic --
+        // COMPATIBILITY.md's explicit commitment ("do not carry units into
+        // the numeric solve"). 50, not some converted value.
+        Assert.Equal(50.0, result.Store!.GetVariable("T"), 10);
+    }
+
+    [Fact]
+    public void BareUnitAnnotation_IsRecordedForDisplay()
+    {
+        // UnitParser.ExtractUnitsFromSource already regex-scanned raw source
+        // text for '[...]' before this fix -- it never distinguished quoted
+        // from bare brackets. The only thing that changed here is the
+        // LEXER now also accepts the bare form instead of choking on it, so
+        // this asserts the two halves (extraction, parsing) actually agree.
+        var result = LseRunner.Run("T = 50 [C]\n");
+        Assert.True(result.Succeeded, result.FailureMessage);
+        Assert.True(result.Store!.HasUnit("T"));
+        Assert.Equal("C", result.Store!.GetUnit("T"));
+    }
+
+    [Fact]
+    public void BareUnitAnnotation_DoesNotBreakAFollowingEquation()
+    {
+        // A unit annotation must be transparent to everything after it on
+        // the line/file, not just parse in isolation -- the same standard
+        // BraceComment_IsAccepted holds real comments to.
+        var result = LseRunner.Run("T = 50 [C]\nx = T + 1\n");
+        Assert.True(result.Succeeded, result.FailureMessage);
+        Assert.Equal(51.0, result.Store!.GetVariable("x"), 10);
+    }
+
+    [Fact]
+    public void QuotedCommentUnit_StillWorks()
+    {
+        // The original design's form must keep working -- it is still
+        // legal EES (any quoted string is a comment), and the entire
+        // existing corpus (001/002/003/006) uses it. This is the
+        // regression control for the ID-rule simplification alongside this
+        // change (dropping the dead, unused trailing-LBRACK option).
+        var result = LseRunner.Run("T = 50 \"[C]\"\n");
+        Assert.True(result.Succeeded, result.FailureMessage);
+        Assert.Equal(50.0, result.Store!.GetVariable("T"), 10);
+        Assert.Equal("C", result.Store!.GetUnit("T"));
+    }
+
     // --- CONVERT function (fixed in commit 3094213) ---
 
     [Fact]
