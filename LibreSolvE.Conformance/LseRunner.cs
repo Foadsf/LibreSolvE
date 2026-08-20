@@ -64,9 +64,16 @@ public static class LseRunner
 
             var executor = new StatementExecutor(variableStore, functionRegistry, solverSettings);
             executor.Execute(fileNode);
-            bool solveSuccess = executor.SolveRemainingAlgebraicEquations();
+            bool algebraicSolveSuccess = executor.SolveRemainingAlgebraicEquations();
+            bool solveSuccess = algebraicSolveSuccess && !executor.HasErrors;
 
-            return new LseRunResult(true, solveSuccess, solveSuccess ? null : "Solver did not converge", variableStore);
+            string? failureMessage = solveSuccess
+                ? null
+                : executor.HasErrors
+                    ? string.Join("; ", executor.ExecutionErrors)
+                    : "Solver did not converge";
+
+            return new LseRunResult(true, solveSuccess, failureMessage, variableStore);
         }
         catch (ParsingException pEx)
         {

@@ -393,7 +393,12 @@ class Program
             lseSpecificLogBuilder.AppendLine("\n--- Variable Store State After Assignments/ODE (for .log file) ---");
             AppendVariableStoreToLog(variableStore, lseSpecificLogBuilder);
             Log.Debug("Core: Solving algebraic equations...");
-            bool solveSuccess = executor.SolveRemainingAlgebraicEquations();
+            bool algebraicSolveSuccess = executor.SolveRemainingAlgebraicEquations();
+            // executor.HasErrors covers assignment-evaluation failures from Execute()
+            // (explicit/potential assignments). Without this, a failed assignment left
+            // zero remaining unknowns for the solver, which is vacuously "solved" --
+            // the file reported success with the variable silently missing.
+            bool solveSuccess = algebraicSolveSuccess && !executor.HasErrors;
             conciseResultsOutput.AppendLine("```text");
             if (solveSuccess)
             {
@@ -404,8 +409,21 @@ class Program
             }
             else
             {
-                lseSpecificLogBuilder.AppendLine("\n--- Algebraic Solver FAILED (for .log file) ---");
-                conciseResultsOutput.AppendLine("Solver FAILED to converge or problem with equations.");
+                if (executor.HasErrors)
+                {
+                    // Distinct from a solver-convergence failure: name it as what it is.
+                    lseSpecificLogBuilder.AppendLine("\n--- Statement Evaluation FAILED (for .log file) ---");
+                    conciseResultsOutput.AppendLine("Statement evaluation FAILED:");
+                    foreach (var err in executor.ExecutionErrors)
+                    {
+                        conciseResultsOutput.AppendLine($"  - {err}");
+                    }
+                }
+                if (!algebraicSolveSuccess)
+                {
+                    lseSpecificLogBuilder.AppendLine("\n--- Algebraic Solver FAILED (for .log file) ---");
+                    conciseResultsOutput.AppendLine("Solver FAILED to converge or problem with equations.");
+                }
                 lseSpecificLogBuilder.AppendLine("\n--- Variable Store State After Failed Solve Attempt (for .log file) ---");
                 AppendVariableStoreToLog(variableStore, lseSpecificLogBuilder, conciseResultsOutput);
                 outExitCode = 1;

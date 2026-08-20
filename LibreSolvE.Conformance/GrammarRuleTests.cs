@@ -90,37 +90,19 @@ public class GrammarRuleTests
     }
 
     [Fact]
-    public void Convert_IncompatibleUnits_ThrowsInternally_ButTheFileStillReportsSuccess()
+    public void Convert_IncompatibleUnits_FailsTheWholeFile()
     {
-        // KNOWN DEFECT, found by this test while building the Phase 2 harness
-        // (it was written as a "must reject" control; it failed, and the
-        // failure was real, not a bad assertion). Not fixed here -- deciding
-        // and implementing the right failure semantics touches every
-        // execution phase in StatementExecutor, which is bigger than this
-        // harness-building pass.
-        //
-        // ConvertUnits() DOES correctly throw ArgumentException for 'ft'->'kg'
-        // (verified directly against the CLI's own verbose log: "Units are
-        // not compatible for conversion: 'ft' (Length) and 'kg' (Mass)").
-        // But ExecuteExplicitAssignments' per-statement catch block
-        // (StatementExecutor.cs) does `catch (Exception ex) { Console.
-        // WriteLine(...); }` -- it logs and moves on. The assignment for 'x'
-        // is silently dropped: 'x' never enters the VariableStore, no
-        // exception propagates, and because there are then zero remaining
-        // algebraic equations, SolveRemainingAlgebraicEquations() returns
-        // true (an empty system is vacuously solved) -- so the whole file
-        // reports success with a variable silently missing.
-        //
-        // This is the SAME shape of bug as the exit-code-hardcoded-to-0 fix
-        // in commit 7ab9b3e (a real failure reported as success), just one
-        // layer deeper: per-statement, not per-file.
-        //
-        // If this test starts failing, someone fixed the failure semantics
-        // (propagate the failure, or fail the whole file on any statement
-        // error) -- flip this assertion to Assert.False and delete this
-        // comment.
+        // Regression test for the defect this test originally found (see git
+        // history for the full story): a statement whose evaluation threw
+        // used to be silently dropped by StatementExecutor's per-statement
+        // catch blocks, and because that then left zero remaining algebraic
+        // unknowns, the file still reported overall success -- the variable
+        // simply vanished with no error surfacing. Fixed via
+        // StatementExecutor.HasErrors, which ExecuteExplicitAssignments and
+        // ExecutePotentialAssignments now populate instead of only logging.
         var result = LseRunner.Run("x = 10 * CONVERT('ft', 'kg')\n");
-        Assert.True(result.Succeeded, "If this now fails, the silent-failure defect above has been fixed.");
-        Assert.False(result.Store!.HasVariable("x"), "x should be silently absent, matching today's actual (wrong) behaviour.");
+        Assert.False(result.Succeeded, "Converting length to mass should fail the whole file, not silently drop the assignment.");
+        Assert.NotNull(result.FailureMessage);
+        Assert.Contains("not compatible", result.FailureMessage, StringComparison.OrdinalIgnoreCase);
     }
 }

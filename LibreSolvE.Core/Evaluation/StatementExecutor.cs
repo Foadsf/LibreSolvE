@@ -40,6 +40,17 @@ public class StatementExecutor
     private readonly List<string> _integralTableColumns = new();
 
     private PlottingService _plottingService = new();
+
+    // Tracks statement-evaluation failures that used to be silently dropped:
+    // an assignment whose RHS throws was logged and skipped, the variable
+    // never entered the store, and -- because a solver over zero remaining
+    // unknowns is vacuously "solved" -- the whole file still reported
+    // success. Only the two live, in-scope phases feed this
+    // (ExecuteExplicitAssignments, ExecutePotentialAssignments); the
+    // integral-table secondary-column and plot-command catch blocks are
+    // deliberately NOT wired in here -- see the commit that added this for
+    // why each of the five catch blocks in this file was or wasn't touched.
+    private readonly List<string> _executionErrors = new();
     #endregion Fields
 
     #region Events
@@ -61,6 +72,16 @@ public class StatementExecutor
     #endregion Constructor
 
     #region Public Methods
+
+    /// <summary>True if any explicit or potential assignment failed to evaluate during
+    /// Execute(). Callers must treat this as overall failure alongside
+    /// SolveRemainingAlgebraicEquations()'s return value -- a file with a failed
+    /// assignment and zero remaining algebraic unknowns would otherwise report success
+    /// (an empty system is vacuously "solved"), which is the defect this exists to close.</summary>
+    public bool HasErrors => _executionErrors.Count > 0;
+
+    public IReadOnlyList<string> ExecutionErrors => _executionErrors;
+
     public void Execute(EesFileNode fileNode)
     {
         CategorizeStatements(fileNode);
@@ -417,7 +438,12 @@ public class StatementExecutor
                 double value = _expressionEvaluator.Evaluate(assignNode.RightHandSide);
                 _variableStore.SetVariable(assignNode.Variable.Name, value);
             }
-            catch (Exception ex) { Console.WriteLine($"Error evaluating explicit assignment for '{assignNode.Variable.Name}': {ex.Message}"); }
+            catch (Exception ex)
+            {
+                string msg = $"Error evaluating explicit assignment for '{assignNode.Variable.Name}': {ex.Message}";
+                Console.WriteLine(msg);
+                _executionErrors.Add(msg);
+            }
         }
     }
 
@@ -464,8 +490,12 @@ public class StatementExecutor
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error evaluating assignment for '{varName}': {ex.Message}");
-                    // Don't abort - continue processing other assignments
+                    string msg = $"Error evaluating assignment for '{varName}': {ex.Message}";
+                    Console.WriteLine(msg);
+                    _executionErrors.Add(msg);
+                    // Still don't abort -- keep processing other assignments so the
+                    // diagnostic log shows every failure, not just the first. The file
+                    // as a whole is still reported as failed via HasErrors.
                 }
             }
         }
