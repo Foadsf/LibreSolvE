@@ -16,6 +16,17 @@ namespace LibreSolvE.Core.Parsing;
 /// </summary>
 public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
 {
+    /// <summary>Stamps a freshly-constructed node with the source line of the
+    /// parse-tree context it came from. Every Visit* method that actually
+    /// constructs a node (as opposed to delegating via Visit(...)) routes its
+    /// return through this, so AstNode.Line is populated uniformly rather
+    /// than at some construction sites and not others.</summary>
+    private static T WithLine<T>(T node, ParserRuleContext context) where T : AstNode
+    {
+        node.Line = context.Start.Line;
+        return node;
+    }
+
     #region File Level Visitor
     /// <summary>
     /// Visits the root of the parse tree (the entire file).
@@ -77,7 +88,7 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
     public override AstNode VisitDirectiveStatement([NotNull] EesParser.DirectiveStatementContext context)
     {
         string directiveText = context.DIRECTIVE().GetText();
-        return new DirectiveNode(directiveText);
+        return WithLine(new DirectiveNode(directiveText), context);
     }
 
     // VisitPlotStatement removed along with the PlotStatement grammar rule
@@ -99,7 +110,7 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
         // Grammar rule: equation: lhs=expression EQ rhs=expression SEMI? ;
         ExpressionNode lhs = (ExpressionNode)Visit(context.lhs); // Visit the labeled 'lhs' expression
         ExpressionNode rhs = (ExpressionNode)Visit(context.rhs); // Visit the labeled 'rhs' expression
-        return new EquationNode(lhs, rhs);
+        return WithLine(new EquationNode(lhs, rhs), context);
     }
 
     /// <summary>
@@ -138,9 +149,9 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
     public override AstNode VisitImplicitAssignment([NotNull] EesParser.ImplicitAssignmentContext context)
     {
         // Grammar rule: assignment: variable=ID EQ rhs=expression SEMI?       # ImplicitAssignment
-        VariableNode lhs = new VariableNode(context.variable.Text);
+        VariableNode lhs = WithLine(new VariableNode(context.variable.Text), context);
         ExpressionNode rhs = (ExpressionNode)Visit(context.rhs);
-        return new EquationNode(lhs, rhs);
+        return WithLine(new EquationNode(lhs, rhs), context);
     }
     #endregion Rule Level Visitors for Equations and Assignments
 
@@ -156,10 +167,10 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
         ExpressionNode operand = (ExpressionNode)Visit(context.expression());
 
         // Create a binary operation with 0 - operand
-        return new BinaryOperationNode(
-            new NumberNode(0.0),
+        return WithLine(new BinaryOperationNode(
+            WithLine(new NumberNode(0.0), context),
             BinaryOperator.Subtract,
-            operand);
+            operand), context);
     }
 
     /// <summary>
@@ -169,7 +180,7 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
     {
         ExpressionNode left = (ExpressionNode)Visit(context.left);
         ExpressionNode right = (ExpressionNode)Visit(context.right);
-        return new BinaryOperationNode(left, BinaryOperator.Power, right);
+        return WithLine(new BinaryOperationNode(left, BinaryOperator.Power, right), context);
     }
 
     /// <summary>
@@ -181,7 +192,7 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
         ExpressionNode right = (ExpressionNode)Visit(context.right); // Visit labeled right operand
         // Determine operator type based on the token type from the labeled 'op'
         BinaryOperator op = context.op.Type == EesLexer.MUL ? BinaryOperator.Multiply : BinaryOperator.Divide;
-        return new BinaryOperationNode(left, op, right);
+        return WithLine(new BinaryOperationNode(left, op, right), context);
     }
 
     /// <summary>
@@ -193,7 +204,7 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
         ExpressionNode right = (ExpressionNode)Visit(context.right); // Visit labeled right operand
         // Determine operator type based on the token type from the labeled 'op'
         BinaryOperator op = context.op.Type == EesLexer.PLUS ? BinaryOperator.Add : BinaryOperator.Subtract;
-        return new BinaryOperationNode(left, op, right);
+        return WithLine(new BinaryOperationNode(left, op, right), context);
     }
 
     /// <summary>
@@ -220,7 +231,7 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
         // Use InvariantCulture for reliable decimal parsing regardless of system locale
         if (double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out double value))
         {
-            return new NumberNode(value);
+            return WithLine(new NumberNode(value), context);
         }
         // It's generally better to throw a more specific exception or handle errors gracefully.
         throw new FormatException($"Could not parse number: {text}");
@@ -231,7 +242,7 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
     /// </summary>
     public override AstNode VisitVariableAtom([NotNull] EesParser.VariableAtomContext context)
     {
-        return new VariableNode(context.ID().GetText());
+        return WithLine(new VariableNode(context.ID().GetText()), context);
     }
 
     /// <summary>
@@ -241,7 +252,7 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
     {
         // Get the full text, including quotes, and pass to the node constructor for unescaping
         string literalWithQuotes = context.STRING_LITERAL().GetText();
-        return new StringLiteralNode(literalWithQuotes);
+        return WithLine(new StringLiteralNode(literalWithQuotes), context);
     }
 
     /// <summary>
@@ -279,7 +290,7 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
             }
         }
 
-        return new FunctionCallNode(functionName, arguments);
+        return WithLine(new FunctionCallNode(functionName, arguments), context);
     }
     #endregion Function Call Visitor
 

@@ -32,6 +32,34 @@ public sealed record LseRunResult(
 /// </summary>
 public static class LseRunner
 {
+    /// <summary>Runs just the lex -> parse -> AST-build steps and returns the
+    /// root node, for tests that need to inspect the tree itself (e.g.
+    /// AstNode.Line) rather than only the solved VariableStore. Throws
+    /// ParsingException/Antlr errors the same way Run()'s try block would --
+    /// callers that need a source string to parse cleanly should let that
+    /// propagate, not swallow it.</summary>
+    public static EesFileNode ParseToAst(string sourceText)
+    {
+        var inputStream = new AntlrInputStream(sourceText);
+        var lexer = new EesLexer(inputStream);
+        var tokenStream = new CommonTokenStream(lexer);
+        var parser = new EesParser(tokenStream);
+        var errorListener = new BetterErrorListener();
+        parser.RemoveErrorListeners();
+        lexer.RemoveErrorListeners();
+        parser.AddErrorListener(errorListener);
+        lexer.AddErrorListener(errorListener);
+
+        var parseTree = parser.eesFile();
+        var astBuilder = new AstBuilderVisitor();
+        AstNode rootAstNode = astBuilder.VisitEesFile(parseTree);
+        if (rootAstNode is not EesFileNode fileNode)
+        {
+            throw new InvalidOperationException("AST root was not EesFileNode");
+        }
+        return fileNode;
+    }
+
     public static LseRunResult Run(string sourceText)
     {
         try
@@ -39,21 +67,12 @@ public static class LseRunner
             var unitsDictionary = UnitParser.ExtractUnitsFromSource(sourceText);
             var commentPlotCommands = PlotDirectiveParser.ExtractPlotCommands(sourceText);
 
-            var inputStream = new AntlrInputStream(sourceText);
-            var lexer = new EesLexer(inputStream);
-            var tokenStream = new CommonTokenStream(lexer);
-            var parser = new EesParser(tokenStream);
-            var errorListener = new BetterErrorListener();
-            parser.RemoveErrorListeners();
-            lexer.RemoveErrorListeners();
-            parser.AddErrorListener(errorListener);
-            lexer.AddErrorListener(errorListener);
-
-            var parseTree = parser.eesFile();
-
-            var astBuilder = new AstBuilderVisitor();
-            AstNode rootAstNode = astBuilder.VisitEesFile(parseTree);
-            if (rootAstNode is not EesFileNode fileNode)
+            EesFileNode fileNode;
+            try
+            {
+                fileNode = ParseToAst(sourceText);
+            }
+            catch (InvalidOperationException)
             {
                 return new LseRunResult(false, false, "AST root was not EesFileNode", null);
             }
