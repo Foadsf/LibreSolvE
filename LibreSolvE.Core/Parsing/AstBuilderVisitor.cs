@@ -80,14 +80,10 @@ public class AstBuilderVisitor : EesParserBaseVisitor<AstNode>
         return new DirectiveNode(directiveText);
     }
 
-    /// <summary>
-    /// Visits a plot statement and creates a PlotCommandNode
-    /// </summary>
-    public override AstNode VisitPlotStatement([NotNull] EesParser.PlotStatementContext context)
-    {
-        string plotCommand = context.PLOT_CMD().GetText();
-        return new PlotCommandNode(plotCommand);
-    }
+    // VisitPlotStatement removed along with the PlotStatement grammar rule
+    // (COMPATIBILITY.md Rule 5) -- PlotCommandNode is now only ever
+    // constructed from PlotDirectiveParser's comment-text extraction, in
+    // StatementExecutor.Execute, not from the parse tree.
     #endregion Statement Level Visitors
 
     #region Rule Level Visitors for Equations and Assignments

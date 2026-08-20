@@ -353,6 +353,9 @@ class Program
             Log.Debug("Core: Extracting units from source...");
             var unitsDictionary = UnitParser.ExtractUnitsFromSource(inputText);
             lseSpecificLogBuilder.AppendLine($"--- Extracted {unitsDictionary.Count} units ---");
+            Log.Debug("Core: Extracting {$PLOT ...} comment directives from source...");
+            var commentPlotCommands = PlotDirectiveParser.ExtractPlotCommands(inputText);
+            lseSpecificLogBuilder.AppendLine($"--- Extracted {commentPlotCommands.Count} comment-embedded PLOT directive(s) ---");
             Log.Debug("Core: Parsing file content...");
             AntlrInputStream inputStream = new AntlrInputStream(inputText);
             EesLexer lexer = new EesLexer(inputStream);
@@ -389,7 +392,7 @@ class Program
                 generatedPlotsInfo.Add($"Plot '{plotData.Settings.Title}' saved as `{Path.GetFileName(plotFilename)}`");
             };
             Log.Debug("Core: Executing statements (assignments, ODEs)...");
-            executor.Execute(fileNode);
+            executor.Execute(fileNode, commentPlotCommands);
             lseSpecificLogBuilder.AppendLine("\n--- Variable Store State After Assignments/ODE (for .log file) ---");
             AppendVariableStoreToLog(variableStore, lseSpecificLogBuilder);
             Log.Debug("Core: Solving algebraic equations...");

@@ -37,6 +37,7 @@ public static class LseRunner
         try
         {
             var unitsDictionary = UnitParser.ExtractUnitsFromSource(sourceText);
+            var commentPlotCommands = PlotDirectiveParser.ExtractPlotCommands(sourceText);
 
             var inputStream = new AntlrInputStream(sourceText);
             var lexer = new EesLexer(inputStream);
@@ -63,7 +64,7 @@ public static class LseRunner
             UnitParser.ApplyUnitsToVariableStore(variableStore, unitsDictionary);
 
             var executor = new StatementExecutor(variableStore, functionRegistry, solverSettings);
-            executor.Execute(fileNode);
+            executor.Execute(fileNode, commentPlotCommands);
             bool algebraicSolveSuccess = executor.SolveRemainingAlgebraicEquations();
             bool solveSuccess = algebraicSolveSuccess && !executor.HasErrors;
 

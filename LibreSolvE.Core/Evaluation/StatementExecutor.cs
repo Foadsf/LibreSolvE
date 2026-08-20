@@ -82,9 +82,20 @@ public class StatementExecutor
 
     public IReadOnlyList<string> ExecutionErrors => _executionErrors;
 
-    public void Execute(EesFileNode fileNode)
+    /// <param name="commentPlotCommands">PLOT commands extracted from comment text by
+    /// PlotDirectiveParser (COMPATIBILITY.md Rule 5 -- PLOT is not a real EES statement,
+    /// so the grammar no longer parses it at all; this is the only remaining path a plot
+    /// command can reach the executor by).</param>
+    public void Execute(EesFileNode fileNode, IEnumerable<string>? commentPlotCommands = null)
     {
         CategorizeStatements(fileNode);
+        if (commentPlotCommands != null)
+        {
+            foreach (var cmd in commentPlotCommands)
+            {
+                _plotCommands.Add(new PlotCommandNode(cmd));
+            }
+        }
         ProcessDirectives();
         ExecuteExplicitAssignments();
         ExecutePotentialAssignments();

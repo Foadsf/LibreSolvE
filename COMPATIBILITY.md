@@ -81,14 +81,23 @@ identifier's trailing `[5]` array index, and cannot simply extend the current
 
 ---
 
-## 5. Rule: `PLOT` is not an EES statement
+## 5. Rule: `PLOT` is not an EES statement -- FIXED
 
 Zero hits for a `PLOT` keyword or statement anywhere in the manual. EES
 plotting is driven from the GUI (New Plot Window dialog), not from equation
-text. The `PLOT_CMD` token in the current grammar is a LibreSolvE invention
-with no EES equivalent. Per the compatibility contract it must either move
-inside a comment directive (`{$PLOT t, T1, T2}`) or become a CLI-only flag
-with no textual representation in the `.lse` file at all. Third violation.
+text. `PLOT_CMD` was a LibreSolvE invention with no EES equivalent, and has
+been removed from both `EesLexer.g4` and `EesParser.g4`: a bare top-level
+`PLOT ...` is now a genuine parser-level syntax error, matching real EES.
+
+The LibreSolvE-only form lives inside a real comment instead --
+`{$PLOT t, T1, T2}` or `"$PLOT t, T1, T2"` -- which a real EES installation
+parses straight past as inert text (manual, general rules, item 3), exactly
+like any other comment. `PlotDirectiveParser.ExtractPlotCommands` pulls the
+command out of the raw source text independently of and before the ANTLR
+parse, mirroring `UnitParser.ExtractUnitsFromSource` -- this has to be a
+separate pre-scan rather than a grammar rule, because the lexer deliberately
+puts comment content on a hidden channel (`COMMENT_BRACE`/`COMMENT_QUOTE ->
+channel(HIDDEN)`) the parser never inspects.
 
 ---
 

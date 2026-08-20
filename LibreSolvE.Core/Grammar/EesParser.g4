@@ -12,9 +12,13 @@ eesFile : statement* EOF;
 // For now, only equations and assignments
 statement
     : assignment            # AssignmentStatement
-    | equation              # EquationStatement
-    | DIRECTIVE             # DirectiveStatement
-    | PLOT_CMD              # PlotStatement
+    | equation               # EquationStatement
+    | DIRECTIVE              # DirectiveStatement
+  // PLOT is not a real EES statement (COMPATIBILITY.md Rule 5 -- zero hits
+  // in the manual; EES plotting is GUI-driven). A bare top-level PLOT is
+  // now a genuine syntax error, matching real EES; the LibreSolvE-only
+  // {$PLOT ...} form lives inside a real comment, invisible to this parser
+  // by design, and is extracted separately by PlotDirectiveParser.
   //| functionDefinition    # FuncDefStatement    // Add later
   //| procedureDefinition   # ProcDefStatement    // Add later
   //| moduleDefinition      # ModuleDefStatement  // Add later

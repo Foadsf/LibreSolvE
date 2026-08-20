@@ -51,8 +51,12 @@ COMMENT_QUOTE : '"' ('""'|~'"')*? '"' -> channel(HIDDEN); // Matches ", allows e
 // --- Whitespace ---
 WS      : [ \t\r\n]+ -> channel(HIDDEN); // Match one or more whitespace characters
 
-// token for plot commands
-PLOT_CMD : 'PLOT' (~[\r\n])* ;
+// PLOT_CMD deliberately removed (COMPATIBILITY.md Rule 5: PLOT is not a
+// real EES statement). 'PLOT' at top level now lexes as a plain ID, which
+// the parser's statement rule rejects unless it happens to start a valid
+// assignment/equation -- a real syntax error, matching real EES. The
+// LibreSolvE-only {$PLOT ...} form is extracted from comment text by
+// PlotDirectiveParser, entirely outside this grammar.
 
 // --- Fragments (Helper rules, not tokens themselves) ---
 fragment INT   : [0-9]+ ;

@@ -1,3 +1,5 @@
+using LibreSolvE.Core.Evaluation;
+
 namespace LibreSolvE.Conformance;
 
 /// <summary>
@@ -59,19 +61,43 @@ public class GrammarRuleTests
     // --- COMPATIBILITY.md SS5: PLOT is not an EES statement ---
 
     [Fact]
-    public void Plot_IsCurrentlyAcceptedByTheGrammar()
+    public void BarePlot_AtTopLevel_IsRejected()
     {
-        // This is a KNOWN, DOCUMENTED violation (COMPATIBILITY.md Rule 5),
-        // not a passing compatibility test -- PLOT_CMD is still a real
-        // grammar rule (EesParser.g4: PlotStatement). Asserting the CURRENT
-        // (wrong) behaviour here, rather than leaving it unstated, means
-        // this test starts failing the moment someone fixes Rule 5 -- which
-        // is the correct prompt to come back and flip this assertion and
-        // its name, not a silent break.
+        // PLOT_CMD removed from the grammar entirely: 'PLOT' now lexes as a
+        // plain ID, which does not start a valid assignment or equation, so
+        // this is a genuine parser-level syntax error -- matching real EES,
+        // which has no PLOT statement at all (zero hits in the manual).
         var result = LseRunner.Run("x = 1\nPLOT x\n");
-        Assert.True(result.Succeeded,
-            "If this now fails, COMPATIBILITY.md Rule 5 (PLOT is not an EES statement) has been " +
-            "fixed -- update this test to assert rejection instead, and remove this comment.");
+        Assert.False(result.Succeeded, "A bare top-level PLOT should be rejected -- COMPATIBILITY.md Rule 5.");
+    }
+
+    [Fact]
+    public void CommentEmbeddedPlot_IsExtractedAndDoesNotBreakParsing()
+    {
+        // The LibreSolvE-only form: {$PLOT ...} is, to the ANTLR grammar, a
+        // completely ordinary { } comment (EesLexer.g4 COMMENT_BRACE) -- the
+        // same bytes a real EES installation would also parse straight past
+        // as inert text. PlotDirectiveParser pulls the command out of the
+        // raw source independently of the parse, so the file still solves.
+        var result = LseRunner.Run("x = 1 {$PLOT x}\n");
+        Assert.True(result.Succeeded, result.FailureMessage);
+        Assert.Equal(1.0, result.Store!.GetVariable("x"), 10);
+    }
+
+    [Fact]
+    public void PlotDirectiveParser_ExtractsBraceAndQuoteForms()
+    {
+        var fromBrace = PlotDirectiveParser.ExtractPlotCommands("x = 1 {$PLOT t, x WITH TITLE \"Foo\"}\n");
+        Assert.Single(fromBrace);
+        Assert.Equal("PLOT t, x WITH TITLE \"Foo\"", fromBrace[0]);
+
+        // The quote form uses EES's OTHER real comment delimiter (" "). Its
+        // own WITH TITLE "..." argument can't also use double quotes without
+        // prematurely closing the comment, so single quotes are used there --
+        // a real, if awkward, constraint of picking the quote-comment form.
+        var fromQuote = PlotDirectiveParser.ExtractPlotCommands("x = 1 \"$PLOT t, x WITH TITLE 'Foo'\"\n");
+        Assert.Single(fromQuote);
+        Assert.Equal("PLOT t, x WITH TITLE 'Foo'", fromQuote[0]);
     }
 
     // --- CONVERT function (fixed in commit 3094213) ---
